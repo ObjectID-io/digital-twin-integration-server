@@ -1,6 +1,6 @@
 # VPS deployment
 
-This deployment starts the ObjectID Digital Twin Integration Server, an authenticated Mosquitto broker, and Redis. It uses the published testnet package `0x6611abbe835bfa4c00936a586f13bb91f11db5004ecc8ac01df30884a2abc05d` and stores off-chain payloads in the private Backblaze bucket `OID-Digital-Twin`.
+This deployment starts the ObjectID Digital Twin Integration Server, an authenticated Mosquitto broker, and Redis. It uses the published testnet package `0x8228c5a214d4e7d8a194090fd70d31ab9b000e5bfdb5f4fb558e042db145d835` and stores off-chain payloads in the private Backblaze bucket `OID-Digital-Twin`.
 
 ## Required values
 
