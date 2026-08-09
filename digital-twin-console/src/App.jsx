@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fieldsOf, LIFECYCLE, qualityScore, runQualityChecks, textOf } from "./quality.js";
 
 const STANDARD_ROWS = [
@@ -9,6 +9,19 @@ const STANDARD_ROWS = [
   { ref: "ISO 23247-4:2021", area: "Information exchange", evidence: "MQTT, source URI, schema, hash, network and typed interfaces", status: "Covered", url: "https://www.iso.org/standard/78745.html" },
   { ref: "ISO 23247-5:2026", area: "Digital thread", evidence: "OIDTwinEvent ordered by revision, verification and canonical hash report", status: "Covered", url: "https://www.iso.org/standard/87425.html" }
 ];
+
+const QUALITY_DETAILS = {
+  "OID-01": { method: "Compare the object ID returned by the IOTA RPC with the configured OIDTwin ID.", expected: "The resolved on-chain object must be the Twin selected by this console.", source: "IOTA object state", standard: "ISO/IEC 30188:2026", scope: "Identity view within the general Digital Twin reference architecture.", url: "https://www.iso.org/standard/53308.html", explorer: true },
+  "OID-02": { method: "Decode lifecycle_state and verify that it belongs to the supported 1-10 lifecycle vocabulary.", expected: "A recognized lifecycle state must be explicitly represented.", source: "OIDTwin root fields", standard: "ISO 23247-3:2021", scope: "Digital representation and information attributes of observable manufacturing elements.", url: "https://www.iso.org/standard/78744.html", explorer: true },
+  "OID-03": { method: "Read the current OIDTwin revision and require a positive monotonic revision number.", expected: "The Twin must expose a revision suitable for ordering state changes.", source: "OIDTwin root fields", standard: "ISO 23247-5:2026", scope: "Digital Thread continuity and ordered Digital Twin changes.", url: "https://www.iso.org/standard/87425.html", explorer: true },
+  "OID-04": { method: "Compare created_at and updated_at when both root timestamps are available.", expected: "updated_at must be greater than or equal to created_at.", source: "OIDTwin root timestamps", standard: "ISO 23247-5:2026", scope: "Chronological consistency of Digital Thread evidence.", url: "https://www.iso.org/standard/87425.html", explorer: true },
+  "ID-01": { method: "Collect creator, owner, steward and Twin identifiers and validate the did: URI prefix.", expected: "Every exposed responsibility identifier must be syntactically recognizable as a DID.", source: "OIDTwin identity fields", standard: "ISO/IEC 30188:2026", scope: "Identity, stakeholder and governance views in the reference architecture.", url: "https://www.iso.org/standard/53308.html", explorer: true },
+  "DT-01": { method: "Use the incremental verifier result for the revision-ordered OIDTwinEvent sequence.", expected: "The indexed event sequence and its evidence chain must verify successfully.", source: "Digital Thread verifier", standard: "ISO 23247-5:2026", scope: "Digital Thread for Digital Twin.", url: "https://www.iso.org/standard/87425.html", explorer: true },
+  "TEL-01": { method: "Compare the MQTT sample assetId with the configured OIDTwin object ID.", expected: "Telemetry must identify the Twin currently being monitored.", source: "Latest MQTT observation", standard: "ISO 23247-4:2021", scope: "Information exchange between entities in the Digital Twin reference architecture.", url: "https://www.iso.org/standard/78745.html", explorer: false },
+  "TEL-02": { method: "Calculate the age of observedAt against the console clock using a 30-second threshold.", expected: "The latest observation must be no older than 30 seconds.", source: "Latest MQTT observation", standard: "ISO 23247-4:2021", scope: "Timely information exchange across Digital Twin networks.", url: "https://www.iso.org/standard/78745.html", explorer: false },
+  "TEL-03": { method: "Count numeric values in the expected telemetry measurement set.", expected: "All five configured measurements must contain numeric values.", source: "Latest MQTT observation", standard: "ISO 23247-3:2021", scope: "Interpretable information attributes in the digital representation.", url: "https://www.iso.org/standard/78744.html", explorer: false },
+  "SYS-01": { method: "Evaluate the integration server readiness aggregate for required dependencies.", expected: "ObjectID, profile loading, MQTT and object storage must all report operational readiness.", source: "Integration server readiness endpoint", standard: "ISO 23247-2:2021", scope: "Functional entities and reference architecture for a manufacturing Digital Twin.", url: "https://www.iso.org/standard/78743.html", explorer: false }
+};
 
 export function App() {
   const [dashboard, setDashboard] = useState(null);
@@ -135,7 +148,7 @@ export function App() {
         </section>
       )}
 
-      {!loading && tab === "assurance" && <Assurance checks={checks} score={score} verification={verification} readiness={readiness} />}
+      {!loading && tab === "assurance" && <Assurance checks={checks} score={score} verification={verification} readiness={readiness} twinId={twinId} network={dashboard?.meta?.network ?? "testnet"} />}
       {!loading && tab === "thread" && <Thread dashboard={dashboard} />}
       {!loading && tab === "standards" && <Standards />}
 
@@ -148,7 +161,8 @@ export function App() {
   );
 }
 
-function Assurance({ checks, score, verification, readiness }) {
+function Assurance({ checks, score, verification, readiness, twinId, network }) {
+  const [selectedCheck, setSelectedCheck] = useState(null);
   const groups = ["Congruity", "Consistency"];
   return <section className="view assurance-view">
     <div className="assurance-head panel">
@@ -158,11 +172,54 @@ function Assurance({ checks, score, verification, readiness }) {
     </div>
     <div className="check-columns">
       {groups.map(group => <div className="check-group" key={group}><SectionTitle index={group === 'Congruity' ? 'A' : 'B'} title={group} note={group === 'Congruity' ? 'FORM & MEANING' : 'RELATIONSHIPS & CONTINUITY'} compact />
-        {checks.filter(c=>c.group===group).map(item => <div className={`check-row ${item.status}`} key={item.id}><span className="check-code">{item.id}</span><div><strong>{item.label}</strong><small>{item.evidence}</small></div><b>{item.status.toUpperCase()}</b></div>)}
+        {checks.filter(c=>c.group===group).map(item => <button type="button" className={`check-row ${item.status}`} key={item.id} onClick={() => setSelectedCheck(item)} aria-haspopup="dialog"><span className="check-code">{item.id}</span><div><strong>{item.label}</strong><small>{item.evidence}</small></div><b>{item.status.toUpperCase()}</b></button>)}
       </div>)}
     </div>
     <div className="evidence-band panel"><div><small>DIGITAL THREAD</small><strong>{verification?.valid ? 'Cryptographically coherent' : 'Evidence pending'}</strong></div><div><small>REQUIRED SERVICES</small><strong>{readiness?.ready ? 'All operational' : 'Review required'}</strong></div><div><small>METHOD</small><strong>Deterministic / explainable</strong></div></div>
+    {selectedCheck && <CheckDialog check={selectedCheck} details={QUALITY_DETAILS[selectedCheck.id]} twinId={twinId} network={network} onClose={() => setSelectedCheck(null)} />}
   </section>;
+}
+
+function CheckDialog({ check, details, twinId, network, onClose }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => event.key === "Escape" && onClose();
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape);
+    dialogRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+      previousFocus?.focus?.();
+    };
+  }, [onClose]);
+
+  const explorerUrl = `https://explorer.iota.org/object/${twinId}?network=${network}`;
+  return <div className="check-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section ref={dialogRef} tabIndex="-1" className="check-dialog panel" role="dialog" aria-modal="true" aria-labelledby="check-dialog-title">
+      <button type="button" className="dialog-close" onClick={onClose} aria-label="Close verification details">CLOSE <span aria-hidden="true">X</span></button>
+      <div className="dialog-heading">
+        <span className="check-code">{check.id}</span>
+        <div><small>{check.group} verification</small><h2 id="check-dialog-title">{check.label}</h2></div>
+        <b className={`dialog-status ${check.status}`}>{check.status.toUpperCase()}</b>
+      </div>
+      <div className="dialog-evidence"><small>OBSERVED RESULT</small><strong>{check.evidence}</strong></div>
+      <div className="dialog-detail-grid">
+        <div><small>VERIFICATION METHOD</small><p>{details?.method}</p></div>
+        <div><small>EXPECTED CONDITION</small><p>{details?.expected}</p></div>
+        <div><small>DATA SOURCE</small><p>{details?.source}</p></div>
+        <div><small>ISO ALIGNMENT</small><p><strong>{details?.standard}</strong><br />{details?.scope}</p></div>
+      </div>
+      <p className="dialog-disclaimer">This is an explainable technical check against the implemented architecture. It is not a certification result or a clause-by-clause conformity assessment.</p>
+      <div className="dialog-actions">
+        <a href={details?.url} target="_blank" rel="noreferrer">OPEN ISO REFERENCE <span>↗</span></a>
+        {details?.explorer && twinId && <a href={explorerUrl} target="_blank" rel="noreferrer">VIEW EVIDENCE ON IOTA <span>↗</span></a>}
+      </div>
+    </section>
+  </div>;
 }
 
 function Thread({ dashboard }) {
@@ -179,7 +236,7 @@ function Thread({ dashboard }) {
 
 function Standards() {
   return <section className="view standards-view">
-    <div className="standards-intro"><span className="eyebrow">ARCHITECTURE ASSURANCE</span><h2>Standards alignment map</h2><p>Technical traceability between ObjectID capabilities and applicable standards. These assessments are architectural and do not replace a certification audit.</p><div className="publication-note"><b>30188 / EDITORIAL STATUS</b><span>2026 edition · Reference architecture · ISO page currently under publication</span></div></div>
+    <div className="standards-intro"><span className="eyebrow">ARCHITECTURE ASSURANCE</span><h2>Standards alignment map</h2><p>Technical traceability between ObjectID capabilities and applicable standards. These assessments are architectural and do not replace a certification audit.</p><div className="publication-note"><b>30188 / PUBLISHED</b><span>Edition 1 · July 2026 · General reference architecture</span></div></div>
     <div className="standards-table">{STANDARD_ROWS.map((row,index)=><a href={row.url} target="_blank" rel="noreferrer" key={row.ref}><span className="std-index">0{index+1}</span><div><strong>{row.ref}</strong><small>{row.area}</small></div><p>{row.evidence}</p><b>{row.status}</b><i>↗</i></a>)}</div>
     <div className="architecture-views panel"><SectionTitle index="RA" title="Implemented architecture views" note="OBJECTID INTERPRETATION" compact/><div className="view-map"><span>Physical entity<small>machine / source</small></span><i>MQTT</i><span>Digital twin<small>OIDTwin / aspects</small></span><i>API</i><span>Services<small>storage / assurance</small></span><i>DID</i><span>Users & roles<small>owner / steward</small></span></div></div>
   </section>;

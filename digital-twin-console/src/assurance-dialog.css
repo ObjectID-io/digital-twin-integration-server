@@ -1,0 +1,173 @@
+.check-row {
+  width: 100%;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .2s ease, padding-left .2s ease;
+}
+
+.check-row:hover,
+.check-row:focus-visible {
+  background: #79f2bd0a;
+  padding-left: 28px;
+  outline: none;
+}
+
+.check-row:focus-visible {
+  box-shadow: inset 3px 0 var(--acid);
+}
+
+.check-dialog-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #020706d9;
+  backdrop-filter: blur(12px);
+  animation: dialog-fade .2s ease both;
+}
+
+.check-dialog {
+  width: min(820px, 100%);
+  max-height: min(860px, calc(100vh - 48px));
+  overflow: auto;
+  padding: 34px;
+  box-shadow: 0 35px 120px #000c, 0 0 70px #79f2bd12;
+  animation: dialog-enter .28s ease both;
+}
+
+.dialog-close {
+  display: block;
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 9px "IBM Plex Mono";
+  letter-spacing: .13em;
+  cursor: pointer;
+}
+
+.dialog-close span {
+  margin-left: 10px;
+  color: var(--acid);
+}
+
+.dialog-heading {
+  display: grid;
+  grid-template-columns: 70px 1fr auto;
+  gap: 18px;
+  align-items: center;
+  margin: 22px 0 28px;
+}
+
+.dialog-heading > .check-code {
+  color: var(--acid);
+  font-size: 13px;
+}
+
+.dialog-heading small,
+.dialog-evidence small,
+.dialog-detail-grid small {
+  color: var(--muted);
+  font: 9px "IBM Plex Mono";
+  letter-spacing: .13em;
+}
+
+.dialog-heading h2 {
+  margin: 6px 0 0;
+  font-size: clamp(26px, 4vw, 42px);
+  letter-spacing: -.04em;
+}
+
+.dialog-status {
+  border: 1px solid currentColor;
+  padding: 8px 10px;
+  color: var(--mint);
+  font: 9px "IBM Plex Mono";
+  letter-spacing: .12em;
+}
+
+.dialog-status.warn { color: var(--amber); }
+.dialog-status.fail { color: var(--red); }
+
+.dialog-evidence {
+  border-left: 2px solid var(--acid);
+  padding: 18px 22px;
+  background: #d5ff5209;
+}
+
+.dialog-evidence strong {
+  display: block;
+  margin-top: 9px;
+  font-size: 15px;
+}
+
+.dialog-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.dialog-detail-grid > div {
+  min-height: 145px;
+  padding: 22px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-detail-grid p {
+  margin: 12px 0 0;
+  color: #b3c8c1;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.dialog-detail-grid p strong { color: var(--mint); }
+
+.dialog-disclaimer {
+  margin: 22px 0;
+  color: var(--muted);
+  font: 9px/1.7 "IBM Plex Mono";
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dialog-actions a {
+  display: flex;
+  justify-content: space-between;
+  min-width: 230px;
+  border: 1px solid var(--line);
+  padding: 13px 15px;
+  color: var(--acid);
+  text-decoration: none;
+  font: 9px "IBM Plex Mono";
+  letter-spacing: .1em;
+}
+
+.dialog-actions a:hover,
+.dialog-actions a:focus-visible {
+  border-color: var(--acid);
+  outline: none;
+}
+
+@keyframes dialog-fade { from { opacity: 0; } }
+@keyframes dialog-enter { from { opacity: 0; transform: translateY(18px) scale(.985); } }
+
+@media (max-width: 620px) {
+  .check-dialog-backdrop { padding: 10px; }
+  .check-dialog { max-height: calc(100vh - 20px); padding: 22px; }
+  .dialog-heading { grid-template-columns: 52px 1fr; }
+  .dialog-status { grid-column: 2; width: max-content; }
+  .dialog-detail-grid { grid-template-columns: 1fr; }
+  .dialog-detail-grid > div { min-height: auto; }
+  .dialog-actions a { width: 100%; }
+}
