@@ -148,10 +148,67 @@ services:
     cap_drop:
       - ALL
 
+  digital-twin-console:
+    build:
+      context: ./digital-twin-console
+      dockerfile: Dockerfile
+    image: objectid/digital-twin-console:v1
+    restart: unless-stopped
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      digital-twin-integration-server:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      DTIS_API_BASE_URL: http://digital-twin-integration-server:8080
+      DTIS_CREDENTIAL_FILE: /run/secrets/dtis_credentials
+      TWIN_ID: ${SIM_ASSET_ID:-0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b}
+      IOTA_NETWORK: testnet
+      IOTA_PACKAGE_ID: 0x8228c5a214d4e7d8a194090fd70d31ab9b000e5bfdb5f4fb558e042db145d835
+      MQTT_URL: mqtt://mosquitto:1883
+      MQTT_TOPIC: ${SIM_MQTT_TOPIC:-objectid/twins/telemetry/dataset}
+      MQTT_USERNAME: ${MQTT_USERNAME:-objectid}
+      MQTT_PASSWORD_FILE: /run/secrets/mqtt_password
+    secrets:
+      - dtis_credentials
+      - mqtt_password
+    networks:
+      - default
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.dt-console.rule=Host(`dt.objectid.io`)"
+      - "traefik.http.routers.dt-console.entrypoints=websecure"
+      - "traefik.http.routers.dt-console.tls=true"
+      - "traefik.http.routers.dt-console.tls.certresolver=myresolver"
+      - "traefik.http.routers.dt-console.middlewares=dt-console-sec@docker"
+      - "traefik.http.services.dt-console.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.dt-console-sec.headers.stsSeconds=63072000"
+      - "traefik.http.middlewares.dt-console-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.dt-console-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.dt-console-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.dt-console-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.dt-console-sec.headers.permissionsPolicy=camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+      - "traefik.http.middlewares.dt-console-sec.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
 volumes:
   mosquitto-config:
   mosquitto-data:
   redis-data:
+
+networks:
+  default:
+  traefik_proxy:
+    external: true
 
 secrets:
   dtis_credentials:

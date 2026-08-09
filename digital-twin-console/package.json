@@ -1,0 +1,28 @@
+{
+  "name": "@objectid/digital-twin-console",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "test": "node --test",
+    "check": "npm test && npm run build"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "5.2.6",
+    "@fontsource/space-grotesk": "5.2.10",
+    "express": "5.1.0",
+    "mqtt": "5.14.1",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "5.0.4",
+    "vite": "7.3.6"
+  }
+}

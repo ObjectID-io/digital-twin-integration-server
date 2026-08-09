@@ -41,6 +41,18 @@ docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-serv
 
 Set `SIM_INTERVAL_MS` or `SIM_MACHINE_NAME` in `.env` to customize it. Do not switch `SIM_MQTT_TOPIC` to the state topic unless on-chain state publication and its OID Credit cost are intended.
 
+## Digital Twin Console
+
+The `digital-twin-console` service publishes the read-only operational dashboard at `https://dt.objectid.io` through the external `traefik_proxy` network. It keeps API and MQTT credentials server-side, streams live telemetry over SSE, and exposes technical congruity, coherence and standards-alignment checks.
+
+```bash
+docker network inspect traefik_proxy >/dev/null
+docker compose up -d --build digital-twin-console
+docker compose logs -f digital-twin-console
+```
+
+The console presents a technical self-assessment and does not claim formal ISO certification.
+
 ## Backblaze check
 
 After setting the Application Key ID, use `/ready` and inspect the server logs. An invalid key pair or a key without read/write access to `OID-Digital-Twin` will make the required storage provider unhealthy.
