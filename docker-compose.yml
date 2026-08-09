@@ -12,11 +12,12 @@ services:
       - |
         cp /bootstrap/mosquitto.conf /mosquitto/config/mosquitto.conf
         mosquitto_passwd -b -c /mosquitto/config/password_file "$$MQTT_USERNAME" "$$(cat /run/secrets/mqtt_password)"
-        chown -R 1883:1883 /mosquitto/config
+        chown -R 1883:1883 /mosquitto/config /mosquitto/data
         chmod 0640 /mosquitto/config/password_file
     volumes:
       - ./deploy/mosquitto.conf:/bootstrap/mosquitto.conf:ro
       - mosquitto-config:/mosquitto/config
+      - mosquitto-data:/mosquitto/data
     secrets:
       - mqtt_password
     security_opt:
@@ -25,11 +26,13 @@ services:
       - ALL
     cap_add:
       - CHOWN
+      - DAC_OVERRIDE
       - FOWNER
 
   mosquitto:
     image: eclipse-mosquitto:2.0
     restart: unless-stopped
+    user: "1883:1883"
     depends_on:
       mqtt-init:
         condition: service_completed_successfully
@@ -71,6 +74,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
 
   digital-twin-integration-server:
     build:
