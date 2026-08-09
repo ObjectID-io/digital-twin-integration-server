@@ -118,7 +118,8 @@ export function App() {
               <Detail label="Twin type" value={textOf(fields.twin_type) || "machine"} />
               <Detail label="Namespace" value={textOf(fields.namespace) || "objectid-vps"} />
               <Detail label="Target kind" value={textOf(fields.target_kind) || "physical-asset"} />
-              <Detail label="Twin DID" value={textOf(fields.twin_did) || textOf(fields.target_did)} mono />
+              <Detail label="Target DID" value={textOf(fields.target_did) || "Not assigned"} mono />
+              <Detail label="Twin DID" value={textOf(fields.twin_did) || "Not assigned"} mono />
               <Detail label="Revision" value={textOf(fields.revision) || "1"} />
             </div>
             <div className="panel trust-panel">
