@@ -110,6 +110,37 @@ services:
     cap_drop:
       - ALL
 
+  mqtt-digital-twin-simulator:
+    build:
+      context: ./mqtt-digital-twin-simulator
+      dockerfile: Dockerfile
+    image: objectid/mqtt-digital-twin-simulator:v1
+    restart: unless-stopped
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      digital-twin-integration-server:
+        condition: service_healthy
+    environment:
+      MQTT_URL: mqtt://mosquitto:1883
+      MQTT_USERNAME: ${MQTT_USERNAME:-objectid}
+      MQTT_PASSWORD_FILE: /run/secrets/mqtt_password
+      MQTT_TOPIC: ${SIM_MQTT_TOPIC:-objectid/twins/telemetry/dataset}
+      MQTT_QOS: "1"
+      SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-5000}
+      SIM_ASSET_ID: ${SIM_ASSET_ID:-0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b}
+      SIM_MACHINE_NAME: ${SIM_MACHINE_NAME:-mqtt-vps-twin}
+      HEALTH_PORT: "8081"
+    secrets:
+      - mqtt_password
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
 volumes:
   mosquitto-config:
   mosquitto-data:

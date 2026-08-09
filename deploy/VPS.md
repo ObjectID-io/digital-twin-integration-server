@@ -31,6 +31,16 @@ mosquitto_pub -h 127.0.0.1 -p 1883 -u objectid -P "$(cat secrets/mqtt_password.t
 
 Both published ports bind to loopback by default. Put the HTTP service behind an HTTPS reverse proxy. Expose MQTT publicly only after adding TLS or restricting port 1883 to a VPN/private network.
 
+## Digital Twin simulator
+
+The Compose stack also runs `mqtt-digital-twin-simulator`. It publishes industrial telemetry every five seconds to the dataset topic. The integration server aggregates these samples into five-minute windows before storing and registering each dataset, limiting OID Credit consumption.
+
+```bash
+docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-server
+```
+
+Set `SIM_INTERVAL_MS` or `SIM_MACHINE_NAME` in `.env` to customize it. Do not switch `SIM_MQTT_TOPIC` to the state topic unless on-chain state publication and its OID Credit cost are intended.
+
 ## Backblaze check
 
 After setting the Application Key ID, use `/ready` and inspect the server logs. An invalid key pair or a key without read/write access to `OID-Digital-Twin` will make the required storage provider unhealthy.
