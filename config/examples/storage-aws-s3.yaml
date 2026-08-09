@@ -1,0 +1,15 @@
+storage:
+  defaultProvider: aws
+  providers:
+    aws:
+      type: s3
+      region: eu-central-1
+      bucket: customer-objectid-digital-twin
+      prefix: twins/
+      # Omit credential names to use IAM roles or the AWS default credential chain.
+      accessKeyEnv: AWS_ACCESS_KEY_ID
+      secretKeyEnv: AWS_SECRET_ACCESS_KEY
+  routes:
+    dataset: aws
+    model: aws
+    evidence: aws

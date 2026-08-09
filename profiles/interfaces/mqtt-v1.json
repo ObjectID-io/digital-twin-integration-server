@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "objectid-profile://interfaces/mqtt/v1",
+  "type": "object",
+  "required": ["protocol", "networkType", "topic"],
+  "properties": {
+    "protocol": { "const": "MQTT" },
+    "networkType": { "enum": [1, 2, 3, 4, 255] },
+    "topic": { "type": "string", "minLength": 1 },
+    "qos": { "enum": [0, 1, 2] },
+    "tlsRequired": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

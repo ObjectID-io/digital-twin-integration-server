@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "objectid-profile://interfaces/opcua/v1",
+  "type": "object",
+  "required": ["protocol", "networkType", "endpoint"],
+  "properties": {
+    "protocol": { "const": "OPC_UA" },
+    "networkType": { "enum": [1, 2, 3, 4, 255] },
+    "endpoint": { "type": "string", "pattern": "^opc\\.tcp://" },
+    "securityMode": { "type": "string" },
+    "securityPolicy": { "type": "string" }
+  },
+  "additionalProperties": true
+}

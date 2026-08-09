@@ -1,0 +1,36 @@
+export const openApiDocument = {
+  openapi: "3.0.3",
+  info: { title: "ObjectID Digital Twin Integration Server", version: "0.1.0", description: "Stateless on-premise integration and interoperability layer for ObjectID Digital Twins." },
+  servers: [{ url: "/" }],
+  components: {
+    securitySchemes: {
+      ApiKey: { type: "apiKey", in: "header", name: "x-api-key" },
+      Bearer: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+    },
+    schemas: {
+      Error: { type: "object", properties: { error: { type: "object", required: ["code", "message", "category"], properties: { code: { type: "string" }, message: { type: "string" }, category: { type: "string" }, details: { type: "object" } } } } },
+    },
+  },
+  paths: {
+    "/health": { get: { summary: "Liveness", responses: { "200": { description: "Alive" } } } },
+    "/ready": { get: { summary: "ObjectID and required dependency readiness", responses: { "200": { description: "Ready" }, "503": { description: "Not ready" } } } },
+    "/api/v1/twins/{id}": { get: { summary: "Get Twin", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Twin" } } } },
+    "/api/v1/twins": { post: { summary: "Create Twin", parameters: [{ name: "Idempotency-Key", in: "header", schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } }, responses: { "201": { description: "Created" } } } },
+    "/api/v1/twins/{id}/states": { post: { summary: "Publish Twin state (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
+    "/api/v1/twins/{id}/datasets": { post: { summary: "Register Twin dataset (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
+    "/api/v1/twins/{id}/models": { post: { summary: "Register Twin model (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
+    "/api/v1/twins/{id}/interfaces": { post: { summary: "Register Twin interface (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
+    "/api/v1/twins/{id}/events": { post: { summary: "Register business or maintenance event (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
+    "/api/v1/twins/{id}/thread": { get: { summary: "Get Digital Thread", responses: { "200": { description: "Events" } } } },
+    "/api/v1/twins/{id}/thread/verify": { get: { summary: "Verify Digital Thread", responses: { "200": { description: "Verification" } } } },
+    "/api/v1/twins/{id}/thread/verify/report": { get: { summary: "Export Digital Thread audit evidence", responses: { "200": { description: "Evidence report" } } } },
+    "/api/v1/twins/{id}/validate-profile": { post: { summary: "Validate a payload against a versioned ISO-alignment profile", responses: { "200": { description: "Validation result" } } } },
+    "/api/v1/profiles/{profileId}/validate": { post: { summary: "Validate a payload without Twin context", responses: { "200": { description: "Validation result" }, "422": { description: "Profile is not validatable" } } } },
+    "/api/v1/profiles": { get: { summary: "List versioned profiles", responses: { "200": { description: "Profiles" } } } },
+    "/api/v1/twins/{id}/identifiers": { get: { summary: "Get identifiers", responses: { "200": { description: "Identifiers" } } } },
+    "/api/v1/resolve/{scheme}/{value}": { get: { summary: "Resolve globally through the ObjectID indexer or use the bounded twinId fallback", parameters: [{ name: "twinId", in: "query", required: false, schema: { type: "string" } }], responses: { "200": { description: "Matches" }, "501": { description: "Indexer required" } } } },
+    "/api/v1/resolve/{sourceScheme}/{value}/to/{targetScheme}": { get: { summary: "Resolve a cross-scheme mapping globally or within twinId", parameters: [{ name: "twinId", in: "query", required: false, schema: { type: "string" } }], responses: { "200": { description: "Resolution" }, "501": { description: "Indexer required" } } } },
+    "/api/v1/twins/{id}/maturity/evaluate": { post: { summary: "Evaluate maturity profile", parameters: [{ name: "commit", in: "query", schema: { type: "boolean" } }], responses: { "200": { description: "Assessment" } } } },
+    "/api/v1/twins/{id}/maturity/assessments": { post: { summary: "Create maturity assessment (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
+  },
+} as const;

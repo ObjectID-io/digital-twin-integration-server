@@ -1,0 +1,15 @@
+storage:
+  defaultProvider: nas
+  providers:
+    nas:
+      type: filesystem
+      basePath: /mnt/objectid-nas
+      uriPrefix: nas://plant-storage/objectid
+      createDirectories: true
+      writable: true
+  routes:
+    dataset: nas
+    model: nas
+    evidence: nas
+    artifact: nas
+    event-payload: nas

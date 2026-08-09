@@ -1,0 +1,23 @@
+connectors:
+  opcua:
+    enabled: true
+    required: true
+    endpoint: "opc.tcp://opcua.example.internal:4840"
+    securityMode: SignAndEncrypt
+    securityPolicy: Basic256Sha256
+    clientCertificate: "${credential:OPCUA_CLIENT_CERT_PATH}"
+    privateKey: "${credential:OPCUA_PRIVATE_KEY_PATH}"
+    username: "${credential:OPCUA_USERNAME}"
+    password: "${credential:OPCUA_PASSWORD}"
+    healthCheckTimeoutMs: 2000
+    mappings:
+      - nodeId: "ns=2;s=Motor1.Temperature"
+        twinId: "0x..."
+        mode: state
+        aspect: telemetry
+        sampleType: observed
+      - nodeId: "ns=2;s=Motor1.Raw"
+        twinId: "0x..."
+        mode: dataset
+        datasetType: telemetry
+        windowSeconds: 300

@@ -1,0 +1,20 @@
+{
+  "$id": "objectid-profile://maturity/default/v1",
+  "name": "ObjectID Default Demonstration Maturity Profile",
+  "version": 1,
+  "description": "Non-normative, replaceable demonstration profile.",
+  "indicators": [
+    { "code": "identity", "weight": 20, "threshold": 60, "requiredEvidence": true },
+    { "code": "data_connection", "weight": 25, "threshold": 60, "requiredEvidence": true },
+    { "code": "semantic_model", "weight": 20, "threshold": 50 },
+    { "code": "provenance", "weight": 20, "threshold": 60 },
+    { "code": "operational_governance", "weight": 15, "threshold": 50 }
+  ],
+  "levels": [
+    { "level": 1, "minimumScore": 0 },
+    { "level": 2, "minimumScore": 25 },
+    { "level": 3, "minimumScore": 50 },
+    { "level": 4, "minimumScore": 75 },
+    { "level": 5, "minimumScore": 90 }
+  ]
+}

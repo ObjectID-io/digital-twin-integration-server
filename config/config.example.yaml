@@ -1,0 +1,94 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  bodyLimitBytes: 1048576
+  trustProxy: false
+
+objectid:
+  network: testnet
+  rpcUrl: https://api.testnet.iota.cafe
+  packageId: ""
+  timeoutMs: 30000
+
+profiles:
+  directory: ./profiles
+
+connectors:
+  rest:
+    enabled: true
+    timeoutMs: 10000
+  mqtt:
+    enabled: false
+    required: false
+    url: mqtts://broker.example.com:8883
+    username: "${credential:MQTT_USERNAME}"
+    password: "${credential:MQTT_PASSWORD}"
+    rejectUnauthorized: true
+    mappings:
+      - topic: factory/line1/motor1/temperature
+        twinId: 0xreplace
+        mode: state
+        aspect: telemetry
+        sampleType: observed
+        qos: 1
+      - topic: factory/line1/motor1/raw
+        twinId: 0xreplace
+        mode: dataset
+        datasetType: telemetry
+        windowSeconds: 300
+        schemaUri: objectid-profile://interfaces/mqtt/v1
+  opcua:
+    enabled: false
+  modbus:
+    enabled: false
+
+security:
+  credentialProvider: environment
+  authMode: disabled
+  apiKeyCredential: DTIS_API_KEY
+  jwtSecretCredential: DTIS_JWT_SECRET
+  serviceDid: did:iota:replace-with-service-did
+  rateLimitPerMinute: 120
+
+cache:
+  type: memory
+  ttlMs: 300000
+
+queue:
+  type: memory
+  maxAttempts: 3
+  baseDelayMs: 250
+  maxDelayMs: 10000
+  pollIntervalMs: 50
+
+policy:
+  cacheTtlMs: 15000
+
+idempotency:
+  provider: memory
+  ttlMs: 300000
+  # redisUrl: redis://redis:6379
+
+dataset:
+  directory: ./data
+
+datasetAggregation:
+  enabled: true
+  defaultWindowSeconds: 300
+  shutdownFlushTimeoutMs: 5000
+
+storage:
+  defaultProvider: local
+  providers:
+    local:
+      type: filesystem
+      basePath: ./data
+      uriPrefix: file://
+      createDirectories: true
+      writable: true
+  routes:
+    dataset: local
+    model: local
+    evidence: local
+    artifact: local
+    event-payload: local

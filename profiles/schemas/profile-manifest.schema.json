@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "objectid-profile://schemas/profile-manifest/v1",
+  "type": "object",
+  "required": ["id", "version", "standard", "type", "description", "semanticReference", "status"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "standard": { "type": "string", "minLength": 1 },
+    "type": { "enum": ["VALIDATION_PROFILE", "MATURITY_PROFILE", "INTERFACE_PROFILE"] },
+    "description": { "type": "string", "minLength": 1 },
+    "schema": { "type": "string", "minLength": 1 },
+    "definition": { "type": "string", "minLength": 1 },
+    "semanticReference": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["experimental", "validated", "deprecated"] }
+  },
+  "oneOf": [
+    { "properties": { "type": { "const": "VALIDATION_PROFILE" } }, "required": ["schema"], "not": { "required": ["definition"] } },
+    { "properties": { "type": { "enum": ["MATURITY_PROFILE", "INTERFACE_PROFILE"] } }, "required": ["definition"], "not": { "required": ["schema"] } }
+  ],
+  "additionalProperties": false
+}

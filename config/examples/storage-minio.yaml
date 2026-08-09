@@ -1,0 +1,18 @@
+storage:
+  defaultProvider: minio
+  providers:
+    minio:
+      type: s3
+      endpoint: http://minio:9000
+      region: local
+      bucket: objectid-digital-twin
+      forcePathStyle: true
+      prefix: twins/
+      accessKeyEnv: MINIO_ROOT_USER
+      secretKeyEnv: MINIO_ROOT_PASSWORD
+  routes:
+    dataset: minio
+    model: minio
+    evidence: minio
+    artifact: minio
+    event-payload: minio

@@ -1,0 +1,10 @@
+{
+  "id": "interface-opcua-v1",
+  "version": "1.0.0",
+  "standard": "ISO 23247-4 alignment profile",
+  "type": "INTERFACE_PROFILE",
+  "description": "ObjectID OPC-UA interface profile; credentials are configuration references, never profile data.",
+  "definition": "./definition.json",
+  "semanticReference": "objectid-profile://interfaces/opcua/v1",
+  "status": "experimental"
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "objectid-profile://interfaces/rest/v1",
+  "type": "object",
+  "required": ["protocol", "networkType", "endpoint"],
+  "properties": {
+    "protocol": { "const": "REST" },
+    "networkType": { "enum": [1, 2, 3, 4, 255] },
+    "endpoint": { "type": "string", "format": "uri" },
+    "tlsRequired": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

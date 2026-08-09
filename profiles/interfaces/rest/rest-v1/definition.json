@@ -1,0 +1,1 @@
+{ "protocol": "REST", "networkTypes": [1, 2, 3, 4, 255], "configuration": ["endpoint", "tlsRequired"] }

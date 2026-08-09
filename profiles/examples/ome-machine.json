@@ -1,0 +1,7 @@
+{
+  "profile": "objectid-profile://iso23247/ome/v1",
+  "twinType": "manufacturing-equipment",
+  "name": "Filling Machine 01",
+  "target": { "kind": "machine", "did": "did:iota:example" },
+  "observableProperties": ["temperature", "speed", "fillLevel"]
+}

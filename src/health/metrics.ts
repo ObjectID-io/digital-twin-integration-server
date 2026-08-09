@@ -1,0 +1,27 @@
+import client from "prom-client";
+
+export const registry = new client.Registry();
+client.collectDefaultMetrics({ register: registry, prefix: "dtis_" });
+export const requestsTotal = new client.Counter({ name: "dtis_requests_total", help: "HTTP requests", labelNames: ["method", "route", "status"], registers: [registry] });
+export const requestDuration = new client.Histogram({ name: "dtis_request_duration_seconds", help: "HTTP request duration", labelNames: ["method", "route"], registers: [registry] });
+export const connectorErrors = new client.Counter({ name: "dtis_connector_errors_total", help: "Connector errors", labelNames: ["connector"], registers: [registry] });
+export const objectidTransactions = new client.Counter({ name: "dtis_objectid_transactions_total", help: "ObjectID transactions", labelNames: ["operation"], registers: [registry] });
+export const objectidFailures = new client.Counter({ name: "dtis_objectid_failures_total", help: "ObjectID failures", labelNames: ["operation"], registers: [registry] });
+export const threadFailures = new client.Counter({ name: "dtis_digital_thread_verification_failures_total", help: "Digital Thread verification failures", registers: [registry] });
+export const queueDepth = new client.Gauge({ name: "dtis_queue_depth", help: "Ephemeral queue depth", registers: [registry] });
+export const policyDenied = new client.Counter({ name: "dtis_policy_denied_total", help: "Local Twin policy denials", labelNames: ["action"], registers: [registry] });
+export const queueJobs = new client.Counter({ name: "dtis_queue_jobs_total", help: "Ingestion jobs accepted", labelNames: ["type"], registers: [registry] });
+export const queueJobsFailed = new client.Counter({ name: "dtis_queue_jobs_failed_total", help: "Ingestion jobs permanently failed", labelNames: ["type", "reason"], registers: [registry] });
+export const queueRetries = new client.Counter({ name: "dtis_queue_retries_total", help: "Safe ingestion retries", labelNames: ["type"], registers: [registry] });
+export const datasetWindowsActive = new client.Gauge({ name: "dtis_dataset_windows_active", help: "Active ephemeral dataset windows", registers: [registry] });
+export const datasetsCreated = new client.Counter({ name: "dtis_datasets_created_total", help: "Aggregated datasets registered", registers: [registry] });
+export const datasetSamples = new client.Counter({ name: "dtis_dataset_samples_total", help: "MQTT samples accepted for datasets", registers: [registry] });
+export const identifierResolutions = new client.Counter({ name: "dtis_identifier_resolution_total", help: "Identifier resolution attempts", labelNames: ["mode"], registers: [registry] });
+export const identifierResolutionFailures = new client.Counter({ name: "dtis_identifier_resolution_failed_total", help: "Identifier resolution failures", labelNames: ["mode"], registers: [registry] });
+export const idempotencyHits = new client.Counter({ name: "dtis_idempotency_hits_total", help: "Idempotent HTTP responses replayed", registers: [registry] });
+export const opcuaConnections = new client.Counter({ name: "dtis_opcua_connections_total", help: "Successful OPC-UA connections", registers: [registry] });
+export const opcuaConnectionErrors = new client.Counter({ name: "dtis_opcua_connection_errors_total", help: "OPC-UA connection errors", registers: [registry] });
+export const opcuaSubscriptionEvents = new client.Counter({ name: "dtis_opcua_subscription_events_total", help: "OPC-UA subscription values received", registers: [registry] });
+export const opcuaSubscriptionErrors = new client.Counter({ name: "dtis_opcua_subscription_errors_total", help: "OPC-UA subscription handler errors", labelNames: ["classification"], registers: [registry] });
+export const opcuaReads = new client.Counter({ name: "dtis_opcua_reads_total", help: "OPC-UA reads", registers: [registry] });
+export const opcuaWrites = new client.Counter({ name: "dtis_opcua_writes_total", help: "OPC-UA writes", registers: [registry] });

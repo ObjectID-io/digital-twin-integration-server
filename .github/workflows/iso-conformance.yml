@@ -1,0 +1,34 @@
+name: Server ISO-alignment evidence
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  server:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: mkdir -p reports
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit -- --reporter=junit --outputFile=reports/unit.xml
+      - run: npm run test:integration -- --reporter=junit --outputFile=reports/integration.xml
+      - run: npm run conformance-report
+      - run: npm run test:coverage
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-conformance-evidence
+          path: |
+            reports/
+            docs/ISO_CONFORMANCE_REPORT.md
+            docs/iso-conformance-matrix.json
+            dist/

@@ -1,0 +1,10 @@
+{
+  "id": "objectid-maturity-example-v1",
+  "version": "1.0.0",
+  "standard": "ISO/IEC 30186 (alignment target; normative values unverified)",
+  "type": "MATURITY_PROFILE",
+  "description": "ObjectID example maturity model. Weights and thresholds are non-normative demonstration values.",
+  "definition": "./profile.json",
+  "semanticReference": "objectid-profile://maturity/default/v1",
+  "status": "experimental"
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "objectid-profile://iso23247/ome/v1",
+  "title": "ObjectID Observable Manufacturing Element Profile V1",
+  "description": "Minimal extensible ObjectID profile for describing an OME; it does not reproduce normative ISO requirements.",
+  "type": "object",
+  "required": ["profile", "twinType", "name"],
+  "properties": {
+    "profile": { "const": "objectid-profile://iso23247/ome/v1" },
+    "twinType": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "target": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "objectId": { "type": "string", "minLength": 3 },
+        "kind": { "type": "string", "minLength": 1 },
+        "did": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "observableProperties": { "type": "array", "items": { "type": "string" } },
+    "metadata": { "type": "object" }
+  },
+  "additionalProperties": true
+}

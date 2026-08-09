@@ -1,0 +1,10 @@
+{
+  "id": "interface-mqtt-v1",
+  "version": "1.0.0",
+  "standard": "ISO 23247-4 alignment profile",
+  "type": "INTERFACE_PROFILE",
+  "description": "ObjectID MQTT interface profile; protocol remains independent from network type.",
+  "definition": "./definition.json",
+  "semanticReference": "objectid-profile://interfaces/mqtt/v1",
+  "status": "experimental"
+}

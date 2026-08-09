@@ -1,0 +1,10 @@
+{
+  "id": "iso23247-ome-v1",
+  "version": "1.0.0",
+  "standard": "ISO 23247-3",
+  "type": "VALIDATION_PROFILE",
+  "description": "Minimal ObjectID OME profile based only on concepts available to this project; normative completeness is not asserted.",
+  "schema": "./schema.json",
+  "semanticReference": "objectid-profile://iso23247/ome/v1",
+  "status": "experimental"
+}

@@ -1,0 +1,7 @@
+{
+  "profile": "objectid-profile://iso23247/ome/v1",
+  "twinType": "manufacturing-equipment",
+  "name": "Motor 1",
+  "target": { "kind": "physical-asset" },
+  "observableProperties": ["temperature", "vibration"]
+}

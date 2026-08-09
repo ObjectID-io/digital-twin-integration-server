@@ -1,0 +1,15 @@
+storage:
+  defaultProvider: local
+  providers:
+    local:
+      type: filesystem
+      basePath: /data/objectid
+      uriPrefix: file:///data/objectid
+      createDirectories: true
+      writable: true
+  routes:
+    dataset: local
+    model: local
+    evidence: local
+    artifact: local
+    event-payload: local

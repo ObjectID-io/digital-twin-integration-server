@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+reports/
+data/
+secrets/
+.env
+*.log
+*.zip
+config/config.yaml
