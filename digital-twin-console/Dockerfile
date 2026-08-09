@@ -4,6 +4,7 @@ COPY package*.json ./
 RUN npm ci
 COPY index.html vite.config.js ./
 COPY src ./src
+COPY public ./public
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-alpine AS runtime

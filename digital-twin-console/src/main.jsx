@@ -5,6 +5,7 @@ import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./styles.css";
+import "./brand.css";
 import { App } from "./App.jsx";
 
 createRoot(document.getElementById("root")).render(

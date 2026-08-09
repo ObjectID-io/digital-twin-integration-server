@@ -59,8 +59,10 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <a className="brand" href="#top" aria-label="ObjectID Digital Twin Console">
-          <span className="brand-mark"><i /><i /><i /></span>
-          <span><b>OBJECTID</b><small>DIGITAL TWIN CONSOLE</small></span>
+          <span className="official-brand">
+            <img src="/objectid-logo-white.png" alt="ObjectID" />
+            <small>Digital Twin</small>
+          </span>
         </a>
         <div className="system-line">
           <StatusDot ok={readiness?.ready} label={readiness?.ready ? "SYSTEM NOMINAL" : "SYSTEM CHECK"} />
