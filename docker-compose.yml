@@ -1,0 +1,122 @@
+name: objectid-digital-twin
+
+services:
+  mqtt-init:
+    image: eclipse-mosquitto:2.0
+    restart: "no"
+    user: "0:0"
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:-objectid}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        cp /bootstrap/mosquitto.conf /mosquitto/config/mosquitto.conf
+        mosquitto_passwd -b -c /mosquitto/config/password_file "$$MQTT_USERNAME" "$$(cat /run/secrets/mqtt_password)"
+        chown -R 1883:1883 /mosquitto/config
+        chmod 0640 /mosquitto/config/password_file
+    volumes:
+      - ./deploy/mosquitto.conf:/bootstrap/mosquitto.conf:ro
+      - mosquitto-config:/mosquitto/config
+    secrets:
+      - mqtt_password
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    restart: unless-stopped
+    depends_on:
+      mqtt-init:
+        condition: service_completed_successfully
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:-objectid}
+    ports:
+      - "${MQTT_BIND_ADDRESS:-127.0.0.1}:1883:1883"
+    volumes:
+      - mosquitto-config:/mosquitto/config:ro
+      - mosquitto-data:/mosquitto/data
+    secrets:
+      - mqtt_password
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -p 1883 -u \"$$MQTT_USERNAME\" -P \"$$(cat /run/secrets/mqtt_password)\" -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  digital-twin-integration-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: objectid/digital-twin-integration-server:v1
+    restart: unless-stopped
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${DTIS_BIND_ADDRESS:-127.0.0.1}:8080:8080"
+    environment:
+      NODE_ENV: production
+      DTIS_CONFIG: /config/config.yaml
+      DTIS_PROFILES_DIRECTORY: /profiles
+      DTIS_OBJECTID_NETWORK: testnet
+      DTIS_OBJECTID_RPC_URL: https://api.testnet.iota.cafe
+      DTIS_OBJECTID_PACKAGE_ID: 0x6611abbe835bfa4c00936a586f13bb91f11db5004ecc8ac01df30884a2abc05d
+      DTIS_CREDENTIAL_PROVIDER: file
+      DTIS_CREDENTIAL_FILE: /run/secrets/dtis_credentials
+      DTIS_AUTH_MODE: api-key
+      DTIS_SERVICE_DID: ${DTIS_SERVICE_DID:?set DTIS_SERVICE_DID in .env}
+      DTIS_IDEMPOTENCY_PROVIDER: redis
+      DTIS_REDIS_URL: redis://redis:6379
+    volumes:
+      - ./config/config.vps-testnet.yaml:/config/config.yaml:ro
+    secrets:
+      - dtis_credentials
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  mosquitto-config:
+  mosquitto-data:
+  redis-data:
+
+secrets:
+  dtis_credentials:
+    file: ./secrets/credentials.json
+  mqtt_password:
+    file: ./secrets/mqtt_password.txt

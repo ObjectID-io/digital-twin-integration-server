@@ -1,0 +1,100 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  bodyLimitBytes: 1048576
+  trustProxy: true
+
+objectid:
+  network: testnet
+  rpcUrl: https://api.testnet.iota.cafe
+  packageId: "0x6611abbe835bfa4c00936a586f13bb91f11db5004ecc8ac01df30884a2abc05d"
+  timeoutMs: 30000
+
+profiles:
+  directory: /profiles
+
+connectors:
+  rest:
+    enabled: true
+    timeoutMs: 10000
+  mqtt:
+    enabled: true
+    required: true
+    url: mqtt://mosquitto:1883
+    username: "${credential:MQTT_USERNAME}"
+    password: "${credential:MQTT_PASSWORD}"
+    rejectUnauthorized: true
+    connectTimeoutMs: 10000
+    reconnectPeriodMs: 5000
+    mappings:
+      - topic: objectid/twins/telemetry/state
+        twinId: "${credential:MQTT_TWIN_ID}"
+        mode: state
+        aspect: telemetry
+        sampleType: observed
+        qos: 1
+      - topic: objectid/twins/telemetry/dataset
+        twinId: "${credential:MQTT_TWIN_ID}"
+        mode: dataset
+        datasetType: telemetry
+        windowSeconds: 300
+        schemaUri: objectid-profile://interfaces/mqtt/v1
+        qos: 1
+  opcua:
+    enabled: false
+  modbus:
+    enabled: false
+
+security:
+  credentialProvider: file
+  credentialFile: /run/secrets/dtis_credentials
+  authMode: api-key
+  apiKeyCredential: DTIS_API_KEY
+  jwtSecretCredential: DTIS_JWT_SECRET
+  rateLimitPerMinute: 120
+
+cache:
+  type: memory
+  ttlMs: 300000
+
+queue:
+  type: memory
+  maxAttempts: 5
+  baseDelayMs: 500
+  maxDelayMs: 30000
+  pollIntervalMs: 100
+
+policy:
+  cacheTtlMs: 15000
+
+idempotency:
+  provider: redis
+  ttlMs: 300000
+  redisUrl: redis://redis:6379
+
+dataset:
+  directory: /data
+  aggregation:
+    enabled: true
+    defaultWindowSeconds: 300
+    shutdownFlushTimeoutMs: 10000
+
+storage:
+  defaultProvider: backblaze
+  providers:
+    backblaze:
+      type: s3
+      endpoint: https://s3.eu-central-003.backblazeb2.com
+      region: eu-central-003
+      bucket: OID-Digital-Twin
+      forcePathStyle: true
+      prefix: twins/
+      accessKeyEnv: B2_KEY_ID
+      secretKeyEnv: B2_APPLICATION_KEY
+      required: true
+  routes:
+    dataset: backblaze
+    model: backblaze
+    evidence: backblaze
+    artifact: backblaze
+    event-payload: backblaze
