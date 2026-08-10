@@ -39,6 +39,18 @@ describe("indexed pagination boundary", () => {
     await indexer.close();
   });
 
+  it("falls back when the provider exposes an uninitialized SDK placeholder", async () => {
+    const adapter = new PlaceholderIndexedAdapter();
+    adapter.setChildren("0xtwin", "OIDTwinEvent", [event(1)]);
+    const indexer = new ObjectIdIndexerAdapter(adapter, testConfig());
+
+    const page = await indexer.findTwinEvents("0xtwin");
+
+    expect(page.items.map((item) => item.eventId)).toEqual(["e1"]);
+    expect(adapter.getDigitalThreadCalls).toBe(1);
+    await indexer.close();
+  });
+
   it("returns a complete empty page when a Twin has no events", async () => {
     const indexer = new ObjectIdIndexerAdapter(new ChainOnlyAdapter(), testConfig());
     await expect(indexer.findTwinEvents("0xempty")).resolves.toEqual({ items: [], hasMore: false, complete: true, nextCursor: undefined });
@@ -66,6 +78,12 @@ class ChainOnlyAdapter extends FakeObjectIdAdapter {
   override async getDigitalThread(twinId: string) {
     if (this.readError) throw this.readError;
     return super.getDigitalThread(twinId);
+  }
+}
+
+class PlaceholderIndexedAdapter extends FakeObjectIdAdapter {
+  async findIndexedTwinEvents(): Promise<never> {
+    throw new Error("not initialized");
   }
 }
 

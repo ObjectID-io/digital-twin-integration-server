@@ -23,7 +23,7 @@ export class ObjectIdIndexerAdapter implements TwinIndexer {
       try {
         return await this.objectid.findIndexedTwinEvents(twinId, options);
       } catch (error) {
-        if (errorCode(error) !== "OBJECTID_EVENT_INDEXER_REQUIRED") throw error;
+        if (!isIndexerUnavailable(error)) throw error;
       }
     }
     return this.findTwinEventsOnChain(twinId, options);
@@ -120,6 +120,12 @@ function decodeCursor(cursor?: string) {
 
 function errorCode(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+}
+
+function isIndexerUnavailable(error: unknown) {
+  if (errorCode(error) === "OBJECTID_EVENT_INDEXER_REQUIRED") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /not initialized|not implemented|indexed twin event.*unavailable/i.test(message);
 }
 
 export { ObjectIdIndexerAdapter as ObjectIdTwinIndexer };
