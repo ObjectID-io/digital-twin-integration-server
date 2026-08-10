@@ -1,0 +1,94 @@
+.timeline-event {
+  width: 100%;
+  min-height: 120px;
+  display: grid;
+  grid-template-columns: 70px 90px 1fr 180px 82px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .2s ease, padding-left .2s ease;
+}
+
+.timeline-event:hover,
+.timeline-event:focus-visible {
+  padding-left: 8px;
+  background: #79f2bd0a;
+  outline: none;
+  box-shadow: inset 2px 0 var(--acid);
+}
+
+.timeline-event p {
+  margin: 7px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.timeline-event code,
+.timeline-open {
+  font: 9px "IBM Plex Mono";
+}
+
+.timeline-event time {
+  text-align: right;
+  color: var(--muted);
+  font: 10px "IBM Plex Mono";
+}
+
+.timeline-open {
+  color: var(--acid);
+  text-align: right;
+}
+
+.event-type-code {
+  color: var(--acid);
+  font: 13px "IBM Plex Mono";
+}
+
+.dialog-evidence span {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font: 9px "IBM Plex Mono";
+}
+
+.event-detail-list {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.event-detail-list > div {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 170px 1fr 70px;
+  gap: 16px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-detail-list small {
+  color: var(--muted);
+  font: 9px "IBM Plex Mono";
+  letter-spacing: .1em;
+}
+
+.event-detail-list code {
+  overflow-wrap: anywhere;
+  color: #bde5d6;
+  font: 10px/1.55 "IBM Plex Mono";
+}
+
+.event-detail-list .copy { justify-self: end; }
+
+@media (max-width: 720px) {
+  .timeline-event { grid-template-columns: 40px 55px 1fr 58px; padding: 14px 0; }
+  .timeline-event time { display: none; }
+  .timeline-open { font-size: 0; }
+  .timeline-open::after { content: "VIEW"; font-size: 8px; }
+  .event-detail-list > div { grid-template-columns: 1fr 50px; gap: 8px; padding: 14px 0; }
+  .event-detail-list small { grid-column: 1 / -1; }
+}

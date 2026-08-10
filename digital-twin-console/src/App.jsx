@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fieldsOf, LIFECYCLE, qualityScore, runQualityChecks, textOf } from "./quality.js";
+import { eventLabel, isIotaObjectId, objectExplorerUrl, transactionExplorerUrl } from "./thread-ui.js";
 
 const STANDARD_ROWS = [
   { ref: "ISO/IEC 30188:2026", area: "Reference architecture", evidence: "Autonomous OIDTwin root with identity, lifecycle, data, model, interface and governance views", status: "Aligned", url: "https://www.iso.org/standard/53308.html" },
@@ -223,15 +224,69 @@ function CheckDialog({ check, details, twinId, network, onClose }) {
 }
 
 function Thread({ dashboard }) {
+  const [selectedEvent, setSelectedEvent] = useState(null);
   const thread = dashboard?.thread?.ok ? dashboard.thread.data : null;
   const items = Array.isArray(thread) ? thread : thread?.items ?? [];
   const verification = dashboard?.verification?.ok ? dashboard.verification.data : null;
   const report = dashboard?.report?.ok ? dashboard.report.data : null;
+  const network = dashboard?.meta?.network ?? "testnet";
   return <section className="view thread-view">
     <div className="thread-head"><div><span className="eyebrow">ISO 23247-5:2026</span><h2>Digital thread</h2><p>Native revision-ordered sequence of OIDTwin events.</p></div><div className={`verification-seal ${verification?.valid ? 'valid' : ''}`}><span>{verification?.valid ? 'VERIFIED' : 'PENDING'}</span><strong>{verification?.eventCount ?? items.length}</strong><small>EVENTS</small></div></div>
-    {items.length ? <div className="timeline">{items.map((event,index)=><article key={event.eventId ?? index}><span className="timeline-node"/><div className="timeline-rev">R{event.revisionAfter ?? index+1}</div><div><strong>Event type {event.eventType ?? '—'}</strong><p>{event.actorDid || 'Actor DID unavailable'}</p><code>{shortId(event.eventId)}</code></div><time>{formatChainTime(event.createdAt)}</time></article>)}</div> : dashboard?.thread?.ok ? <Empty title="Digital Thread is empty" text="No OIDTwinEvent records are currently associated with this Twin." /> : <Empty title="Digital Thread unavailable" text={dashboard?.thread?.error || "The on-chain event sequence could not be read."} />}
+    {items.length ? <div className="timeline">{items.map((event,index)=><button type="button" className="timeline-event" key={event.eventId ?? index} onClick={() => setSelectedEvent(event)} aria-haspopup="dialog"><span className="timeline-node"/><div className="timeline-rev">R{event.revisionAfter ?? index+1}</div><div><strong>{eventLabel(event.eventType)}</strong><p>{event.actorDid || 'Actor DID unavailable'}</p><code>{shortId(event.eventId)}</code></div><time>{formatChainTime(event.createdAt)}</time><span className="timeline-open">DETAILS ↗</span></button>)}</div> : dashboard?.thread?.ok ? <Empty title="Digital Thread is empty" text="No OIDTwinEvent records are currently associated with this Twin." /> : <Empty title="Digital Thread unavailable" text={dashboard?.thread?.error || "The on-chain event sequence could not be read."} />}
     <div className="report-panel panel"><SectionTitle index="HASH" title="Audit evidence" note="RFC 8785 / SHA-256" compact/><Detail label="Verifier" value={report?.verifierVersion || 'ObjectID incremental verifier'} /><Detail label="Evidence digest" value={report?.eventEvidenceDigest || report?.evidenceHash?.digest || 'Pending'} mono/><Detail label="Report hash" value={report?.reportHash || 'Pending'} mono/></div>
+    {selectedEvent && <ThreadEventDialog event={selectedEvent} network={network} onClose={() => setSelectedEvent(null)} />}
   </section>;
+}
+
+function ThreadEventDialog({ event, network, onClose }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (keyboardEvent) => keyboardEvent.key === "Escape" && onClose();
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape);
+    dialogRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+      previousFocus?.focus?.();
+    };
+  }, [onClose]);
+
+  const objectUrl = objectExplorerUrl(event.eventId, network);
+  const twinUrl = objectExplorerUrl(event.twinId, network);
+  const transactionUrl = event.transactionDigest ? transactionExplorerUrl(event.transactionDigest, network) : "";
+  return <div className="check-dialog-backdrop" role="presentation" onMouseDown={(mouseEvent) => mouseEvent.target === mouseEvent.currentTarget && onClose()}>
+    <section ref={dialogRef} tabIndex="-1" className="check-dialog thread-event-dialog panel" role="dialog" aria-modal="true" aria-labelledby="thread-event-title">
+      <button type="button" className="dialog-close" onClick={onClose} aria-label="Close event details">CLOSE <span aria-hidden="true">X</span></button>
+      <div className="dialog-heading">
+        <span className="event-type-code">E{String(event.eventType).padStart(3, "0")}</span>
+        <div><small>ON-CHAIN TWIN EVENT</small><h2 id="thread-event-title">{eventLabel(event.eventType)}</h2></div>
+        <b className="dialog-status">REV {event.revisionAfter}</b>
+      </div>
+      <div className="dialog-evidence"><small>REVISION TRANSITION</small><strong>{event.revisionBefore} → {event.revisionAfter}</strong><span>{formatChainTime(event.createdAt)}</span></div>
+      <div className="event-detail-list">
+        <EventField label="EVENT OBJECT ID" value={event.eventId} copy />
+        <EventField label="TWIN OBJECT ID" value={event.twinId} copy />
+        <EventField label="ACTOR DID" value={event.actorDid} copy />
+        <EventField label="PAYLOAD REFERENCE" value={event.payloadRef || "Not provided"} copy={Boolean(event.payloadRef)} />
+        <EventField label="PAYLOAD HASH" value={event.payloadHash || "Not provided"} copy={Boolean(event.payloadHash)} />
+        <EventField label="TRANSACTION DIGEST" value={event.transactionDigest || "Not exposed by the current provider"} copy={Boolean(event.transactionDigest)} />
+      </div>
+      <p className="dialog-disclaimer">This record is an OIDTwinEvent child object stored on IOTA. Payload bodies may remain off-chain; the event stores their reference and integrity hash when supplied.</p>
+      <div className="dialog-actions">
+        {isIotaObjectId(event.eventId) && <a href={objectUrl} target="_blank" rel="noreferrer">VIEW EVENT ON IOTA <span>↗</span></a>}
+        {isIotaObjectId(event.twinId) && <a href={twinUrl} target="_blank" rel="noreferrer">VIEW TWIN ON IOTA <span>↗</span></a>}
+        {transactionUrl && <a href={transactionUrl} target="_blank" rel="noreferrer">VIEW TRANSACTION <span>↗</span></a>}
+      </div>
+    </section>
+  </div>;
+}
+
+function EventField({ label, value, copy = false }) {
+  return <div><small>{label}</small><code title={value}>{value}</code>{copy && <Copy value={value} />}</div>;
 }
 
 function Standards() {
