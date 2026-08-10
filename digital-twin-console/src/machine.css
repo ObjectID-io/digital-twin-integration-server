@@ -1,0 +1,35 @@
+.machine-render {
+  width: min(620px, 125%);
+  height: 430px;
+  object-fit: contain;
+  z-index: 2;
+  opacity: 0.96;
+  mix-blend-mode: screen;
+  filter: saturate(0.92) contrast(1.08) drop-shadow(0 28px 24px #000a);
+  mask-image: radial-gradient(ellipse 72% 64% at 50% 55%, #000 42%, rgb(0 0 0 / 0.96) 60%, transparent 100%);
+}
+
+.machine-link {
+  position: absolute;
+  z-index: 4;
+  right: 13%;
+  top: 27%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  color: var(--amber);
+  background: currentColor;
+  box-shadow: 0 0 14px currentColor;
+}
+
+.machine-link.live {
+  color: var(--acid);
+  animation: pulse 2s infinite;
+}
+
+@media (max-width: 720px) {
+  .machine-render {
+    width: 118%;
+    height: 325px;
+  }
+}
