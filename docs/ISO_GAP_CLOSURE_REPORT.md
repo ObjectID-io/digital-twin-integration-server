@@ -9,7 +9,7 @@ The implementation now combines an ISO-aligned architecture with traceable requi
 - No Move data structures or business functions were added. Only IOTA/MoveStdlib toolchain revisions were aligned.
 - A machine-readable and human-readable conformance matrix maps stable test IDs to evidence.
 - A manifest-based, versioned profile registry validates the experimental OME profile and drives a reproducible example maturity model.
-- Global identifiers and Digital Thread reads use a replaceable indexer boundary with pagination, filters, checkpoint/recovery hooks, and no full-chain query fallback.
+- Global identifiers and Digital Thread reads use a replaceable indexer boundary with pagination, filters and checkpoint/recovery hooks. Digital Thread reads also have a bounded ObjectID owner/type fallback for the requested Twin; global identifier resolution still requires an external indexer.
 - The verifier checks ordering, revisions, gaps, duplicates, event type, Twin ID, actor, payload-hash format, and provider-backed transaction existence. It exports audit evidence reports.
 - Mutation API policy reads authoritative `OIDTwinRoleGrant` objects. No server ACL is authoritative.
 - OPC-UA uses `node-opcua` for connect, disconnect, browse, read, subscribe, write, and health, with CredentialProvider-resolved configuration and the shared queue/aggregator pipeline.

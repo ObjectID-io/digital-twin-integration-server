@@ -54,8 +54,9 @@ security:
   rateLimitPerMinute: 120
 
 cache:
-  type: memory
-  ttlMs: 300000
+  type: redis
+  ttlMs: 15000
+  redisUrl: redis://redis:6379
 
 queue:
   type: memory

@@ -107,6 +107,9 @@ services:
       DTIS_SERVICE_DID: ${DTIS_SERVICE_DID:?set DTIS_SERVICE_DID in .env}
       DTIS_IDEMPOTENCY_PROVIDER: redis
       DTIS_REDIS_URL: redis://redis:6379
+      DTIS_CACHE_TYPE: redis
+      DTIS_CACHE_REDIS_URL: redis://redis:6379
+      DTIS_CACHE_TTL_MS: "15000"
     volumes:
       - ./config/config.vps-testnet.yaml:/config/config.yaml:ro
     secrets:

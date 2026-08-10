@@ -39,4 +39,5 @@ export interface TwinIndexer {
   getCheckpoint?(): Promise<IndexerCheckpoint | null>;
   resume?(): Promise<void>;
   rebuild?(): Promise<void>;
+  close?(): Promise<void>;
 }

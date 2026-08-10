@@ -10,6 +10,7 @@ The V1 server now has a scalable indexed read boundary, complete paginated Digit
 |---|---|---|---|
 | Indexer abstraction | IMPLEMENTED | `src/indexer/types.ts` | Storage-neutral only |
 | ObjectID indexed provider | PARTIAL | `ObjectIdIndexerAdapter` delegation | Provider method availability is external |
+| Bounded Thread fallback | IMPLEMENTED | Owner/type child-object read, pagination and cache tests | Reads one requested Twin; it is not a global chain indexer |
 | Persistent read model | NOT_IMPLEMENTED | Explicit external boundary | No bundled PostgreSQL/SQLite/OpenSearch |
 | Provider-side pagination | IMPLEMENTED | 1,500-event acceptance test | Provider must honor cursor/filter contract |
 | Full Thread verification | IMPLEMENTED | >500 and cross-page tests | RPC transaction checks remain provider-dependent |

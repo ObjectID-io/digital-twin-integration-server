@@ -88,6 +88,9 @@ not create an alternative Credit model; ObjectID/Move remains authoritative.
 `GET /api/v1/twins/:id/thread` returns `OIDTwinEvent[]`.
 `GET /api/v1/twins/:id/thread/verify` checks Twin consistency, known types,
 actor, revision transitions, continuity, ordering and required payload refs.
+An indexed provider is preferred. When it is unavailable, the server performs
+a bounded ObjectID owner/type read of the Twin's child events, then applies
+stable pagination and filtering with a short memory or Redis cache.
 
 ## Identifier Resolver
 

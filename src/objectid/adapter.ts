@@ -60,21 +60,7 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
 
   async getTwinEvents(twinId: string): Promise<TwinEvent[]> {
     const objects = await this.getTwinChildren(twinId, "OIDTwinEvent");
-    return objects.map((raw: any) => {
-      const fields = fieldsOf(raw);
-      return {
-        eventId: objectIdOf(raw) || String(fields.id ?? ""),
-        twinId: String(fields.twin_id ?? ""),
-        eventType: Number(fields.event_type ?? 0),
-        revisionBefore: Number(fields.revision_before ?? 0),
-        revisionAfter: Number(fields.revision_after ?? 0),
-        actorDid: String(fields.actor_did ?? ""),
-        payloadRef: String(fields.payload_ref ?? ""),
-        payloadHash: String(fields.payload_hash ?? ""),
-        createdAt: Number(fields.created_at ?? 0),
-        transactionDigest: raw?.digest,
-      };
-    });
+    return objects.map((raw: any) => eventOf(raw));
   }
 
   async getDigitalThread(twinId: string) {
@@ -170,6 +156,7 @@ function eventOf(raw: any): TwinEvent {
     revisionAfter: Number(raw?.revisionAfter ?? fields.revision_after ?? 0),
     actorDid: String(raw?.actorDid ?? fields.actor_did ?? ""), payloadRef: String(raw?.payloadRef ?? fields.payload_ref ?? ""),
     payloadHash: String(raw?.payloadHash ?? fields.payload_hash ?? ""), createdAt: Number(raw?.createdAt ?? fields.created_at ?? 0),
-    transactionDigest: raw?.transactionDigest ?? raw?.digest,
+    transactionDigest: raw?.transactionDigest ?? raw?.previousTransaction ?? raw?.previous_transaction
+      ?? raw?.data?.previousTransaction ?? raw?.data?.previous_transaction,
   };
 }

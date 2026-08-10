@@ -258,6 +258,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       await withTimeout(aggregator.close(), config.dataset.aggregation.shutdownFlushTimeoutMs);
       await worker.stop();
       await connectors.stop();
+      await indexer.close();
       await idempotency.close();
     },
   };

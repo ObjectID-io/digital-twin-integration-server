@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { rm } from "node:fs/promises";
 import { createApp } from "../../src/api/app.js";
+import { AppError } from "../../src/common/errors.js";
 import { FakeObjectIdAdapter } from "../fixtures/fakeObjectId.js";
 import { testConfig } from "../fixtures/config.js";
 
@@ -46,6 +47,21 @@ describe("HTTP integration", () => {
     expect(report.body).toMatchObject({ twinId: "0xtwin", verifierVersion: "1.1.0", verification: { valid: true } });
   });
 
+  it("serves the Digital Thread through the on-chain fallback", async () => {
+    const chainOnly = new ChainOnlyAdapter();
+    chainOnly.twins.set("0xtwin", { id: "0xtwin", revision: 1 });
+    chainOnly.setChildren("0xtwin", "OIDTwinEvent", [
+      { eventId: "e1", twinId: "0xtwin", eventType: 1, revisionBefore: 0, revisionAfter: 1, actorDid: "did:a", payloadRef: "0xtwin", payloadHash: "", createdAt: 1 },
+    ]);
+    const app = createApp(testConfig(), chainOnly).app;
+
+    const response = await request(app).get("/api/v1/twins/0xtwin/thread");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ items: [{ eventId: "e1" }], hasMore: false, complete: true });
+    expect(chainOnly.getDigitalThreadCalls).toBe(1);
+  });
+
   it("validates an OME payload through the profile API", async () => {
     adapter.setChildren("0xtwin", "OIDTwinAspect", [{ fields: { aspect_code: "iso23247_ome", schema_uri: "objectid-profile://iso23247/ome/v1", semantic_ref: "ISO23247:OME" } }]);
     const app = createApp(testConfig(), adapter).app;
@@ -75,3 +91,9 @@ describe("HTTP integration", () => {
     expect(adapter.calls.filter((item) => item.method === "publishState")).toHaveLength(1);
   });
 });
+
+class ChainOnlyAdapter extends FakeObjectIdAdapter {
+  async findIndexedTwinEvents(): Promise<never> {
+    throw new AppError("OBJECTID_EVENT_INDEXER_REQUIRED", "No proprietary indexer", 501, "OBJECTID");
+  }
+}

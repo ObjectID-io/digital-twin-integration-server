@@ -56,6 +56,9 @@ function applyEnvironment(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig 
   if (env.DTIS_CREDENTIAL_FILE) next.security.credentialFile = env.DTIS_CREDENTIAL_FILE;
   if (env.DTIS_SERVICE_DID) next.security.serviceDid = env.DTIS_SERVICE_DID;
   if (env.DTIS_DATA_DIRECTORY) next.dataset.directory = env.DTIS_DATA_DIRECTORY;
+  if (env.DTIS_CACHE_TYPE) next.cache.type = env.DTIS_CACHE_TYPE as AppConfig["cache"]["type"];
+  if (env.DTIS_CACHE_TTL_MS) next.cache.ttlMs = Number(env.DTIS_CACHE_TTL_MS);
+  if (env.DTIS_CACHE_REDIS_URL) next.cache.redisUrl = env.DTIS_CACHE_REDIS_URL;
   if (env.DTIS_IDEMPOTENCY_PROVIDER) next.idempotency.provider = env.DTIS_IDEMPOTENCY_PROVIDER as AppConfig["idempotency"]["provider"];
   if (env.DTIS_REDIS_URL) { next.idempotency.provider = "redis"; next.idempotency.redisUrl = env.DTIS_REDIS_URL; }
   return next;
@@ -99,6 +102,15 @@ export async function loadConfig(path = process.env.DTIS_CONFIG ?? "./config/con
   }
   if (!["memory", "redis"].includes(config.idempotency.provider)) {
     throw new AppError("CONFIG_INVALID_IDEMPOTENCY", "idempotency.provider is invalid", 500, "VALIDATION");
+  }
+  if (!["memory", "redis"].includes(config.cache.type)) {
+    throw new AppError("CONFIG_INVALID_CACHE", "cache.type is invalid", 500, "VALIDATION");
+  }
+  if (!Number.isInteger(config.cache.ttlMs) || config.cache.ttlMs < 1) {
+    throw new AppError("CONFIG_INVALID_CACHE_TTL", "cache.ttlMs must be a positive integer", 500, "VALIDATION");
+  }
+  if (config.cache.type === "redis" && !(config.cache.redisUrl ?? config.idempotency.redisUrl)) {
+    throw new AppError("CONFIG_CACHE_REDIS_URL_REQUIRED", "Redis cache requires cache.redisUrl or idempotency.redisUrl", 500, "VALIDATION");
   }
   validateStorage(config.storage);
   return config;

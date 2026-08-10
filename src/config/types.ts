@@ -15,7 +15,7 @@ export interface AppConfig {
     serviceDid?: string;
     rateLimitPerMinute: number;
   };
-  cache: { type: "memory"; ttlMs: number };
+  cache: { type: "memory" | "redis"; ttlMs: number; redisUrl?: string };
   policy: { cacheTtlMs: number };
   queue: { type: "memory"; maxAttempts: number; baseDelayMs: number; maxDelayMs: number; pollIntervalMs: number };
   idempotency: { provider: "memory" | "redis"; ttlMs: number; redisUrl?: string };
