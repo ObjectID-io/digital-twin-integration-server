@@ -9,6 +9,7 @@ import "./machine.css";
 import "./brand.css";
 import "./assurance-dialog.css";
 import "./thread-dialog.css";
+import "./audit-evidence.css";
 import { App } from "./App.jsx";
 
 createRoot(document.getElementById("root")).render(

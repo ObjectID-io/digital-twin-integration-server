@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fieldsOf, LIFECYCLE, qualityScore, runQualityChecks, textOf } from "./quality.js";
 import { eventLabel, isIotaObjectId, objectExplorerUrl, transactionExplorerUrl } from "./thread-ui.js";
+import { validateAuditEvidence } from "./audit-validation.js";
 
 const STANDARD_ROWS = [
   { ref: "ISO/IEC 30188:2026", area: "Reference architecture", evidence: "Autonomous OIDTwin root with identity, lifecycle, data, model, interface and governance views", status: "Aligned", url: "https://www.iso.org/standard/53308.html" },
@@ -233,9 +234,88 @@ function Thread({ dashboard }) {
   return <section className="view thread-view">
     <div className="thread-head"><div><span className="eyebrow">ISO 23247-5:2026</span><h2>Digital thread</h2><p>Native revision-ordered sequence of OIDTwin events.</p></div><div className={`verification-seal ${verification?.valid ? 'valid' : ''}`}><span>{verification?.valid ? 'VERIFIED' : 'PENDING'}</span><strong>{verification?.eventCount ?? items.length}</strong><small>EVENTS</small></div></div>
     {items.length ? <div className="timeline">{items.map((event,index)=><button type="button" className="timeline-event" key={event.eventId ?? index} onClick={() => setSelectedEvent(event)} aria-haspopup="dialog"><span className="timeline-node"/><div className="timeline-rev">R{event.revisionAfter ?? index+1}</div><div><strong>{eventLabel(event.eventType)}</strong><p>{event.actorDid || 'Actor DID unavailable'}</p><code>{shortId(event.eventId)}</code></div><time>{formatChainTime(event.createdAt)}</time><span className="timeline-open">DETAILS ↗</span></button>)}</div> : dashboard?.thread?.ok ? <Empty title="Digital Thread is empty" text="No OIDTwinEvent records are currently associated with this Twin." /> : <Empty title="Digital Thread unavailable" text={dashboard?.thread?.error || "The on-chain event sequence could not be read."} />}
-    <div className="report-panel panel"><SectionTitle index="HASH" title="Audit evidence" note="RFC 8785 / SHA-256" compact/><Detail label="Verifier" value={report?.verifierVersion || 'ObjectID incremental verifier'} /><Detail label="Evidence digest" value={report?.eventEvidenceDigest || report?.evidenceHash?.digest || 'Pending'} mono/><Detail label="Report hash" value={report?.reportHash || 'Pending'} mono/></div>
+    <AuditEvidencePanel items={items} verification={verification} report={report} network={network} twinId={dashboard?.meta?.twinId} />
     {selectedEvent && <ThreadEventDialog event={selectedEvent} network={network} onClose={() => setSelectedEvent(null)} />}
   </section>;
+}
+
+function AuditEvidencePanel({ items, verification, report, network, twinId }) {
+  const [validation, setValidation] = useState(null);
+  const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    setValidation(null);
+    validateAuditEvidence(items, verification, report)
+      .then((result) => active && setValidation(result))
+      .catch((error) => active && setValidation({ error: error.message }));
+    return () => { active = false; };
+  }, [items, verification, report]);
+
+  const rows = [
+    { id: "verifier", label: "Verifier", value: report?.verifierVersion || "ObjectID incremental verifier", status: validation?.verifier?.status },
+    { id: "evidence", label: "Evidence digest", value: report?.evidenceHash?.digest || verification?.eventEvidenceDigest || "Pending", status: validation?.evidence?.status },
+    { id: "report", label: "Report hash", value: report?.reportHash || "Pending", status: validation?.report?.status },
+  ];
+
+  return <>
+    <div className="report-panel audit-panel panel">
+      <SectionTitle index="HASH" title="Audit evidence" note="RFC 8785 / SHA-256" compact />
+      {rows.map((row) => <button type="button" className="audit-row" key={row.id} onClick={() => setSelected(row.id)} aria-haspopup="dialog">
+        <span>{row.label}</span><strong className={row.id === "verifier" ? "" : "mono"}>{row.value}</strong>
+        <b className={`audit-status ${(row.status || "checking").toLowerCase()}`}>{row.status || "CHECKING"}</b><i>DETAILS ↗</i>
+      </button>)}
+    </div>
+    {selected && <AuditEvidenceDialog kind={selected} validation={validation} verification={verification} report={report} items={items} network={network} twinId={twinId} onClose={() => setSelected(null)} />}
+  </>;
+}
+
+function AuditEvidenceDialog({ kind, validation, verification, report, items, network, twinId, onClose }) {
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const closeOnEscape = (event) => event.key === "Escape" && onClose();
+    document.addEventListener("keydown", closeOnEscape);
+    dialogRef.current?.focus();
+    return () => { document.removeEventListener("keydown", closeOnEscape); previousFocus?.focus?.(); };
+  }, [onClose]);
+
+  const data = validation?.[kind];
+  const content = {
+    verifier: {
+      title: "Incremental verifier",
+      method: "Validates event ordering, revision continuity, Twin identity, event types, actors and payload-hash syntax before producing the evidence digest.",
+      expected: "Verifier 1.1.0, report format 1.0, a complete event range and no structural errors.",
+    },
+    evidence: {
+      title: "Event evidence digest",
+      method: "Each canonical event is serialized with RFC 8785 JCS and hashed with SHA-256. The resulting sha256 strings are concatenated in revision order and hashed again.",
+      expected: "The browser calculation must exactly match the digest returned by the independent server verifier.",
+    },
+    report: {
+      title: "Audit report hash",
+      method: "The full audit report, excluding reportHash, is serialized with RFC 8785 JCS and hashed with SHA-256 in this browser.",
+      expected: "The recalculated hash must exactly match reportHash. This proves integrity of the report content, not signer identity.",
+    },
+  }[kind];
+  const explorer = twinId ? objectExplorerUrl(twinId, network) : null;
+
+  return <div className="check-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section ref={dialogRef} tabIndex="-1" className="check-dialog audit-dialog panel" role="dialog" aria-modal="true" aria-labelledby="audit-dialog-title">
+      <button type="button" className="dialog-close" onClick={onClose}>CLOSE <span aria-hidden="true">X</span></button>
+      <div className="dialog-heading"><span className="check-code">HASH</span><div><small>Independent browser validation</small><h2 id="audit-dialog-title">{content.title}</h2></div><b className={`dialog-status ${(data?.status || "checking").toLowerCase()}`}>{data?.status || "CHECKING"}</b></div>
+      <div className="dialog-detail-grid"><div><small>VALIDATION METHOD</small><p>{content.method}</p></div><div><small>EXPECTED CONDITION</small><p>{content.expected}</p></div></div>
+      {kind === "verifier" && <div className="audit-facts"><AuditFact label="Verifier version" value={report?.verifierVersion} /><AuditFact label="Report format" value={report?.reportFormatVersion} /><AuditFact label="Events checked" value={verification?.eventCount ?? items.length} /><AuditFact label="Thread result" value={verification?.valid ? "VALID / COMPLETE" : verification?.reason || "PARTIAL"} /><AuditFact label="Transaction inclusion" value={verification?.transactionVerification?.status || "NOT_VERIFIED"} /></div>}
+      {kind !== "verifier" && <div className="hash-comparison"><AuditFact label="EXPECTED" value={data?.expected || "Unavailable"} copy /><AuditFact label="RECALCULATED IN BROWSER" value={data?.calculated || "Calculating"} copy /></div>}
+      {kind === "evidence" && <div className="event-hash-list"><small>CANONICAL EVENT HASHES</small>{(data?.eventHashes ?? []).map((entry, index) => <a key={entry.eventId || index} href={isIotaObjectId(entry.eventId) ? objectExplorerUrl(entry.eventId, network) : explorer} target="_blank" rel="noreferrer"><span>R{entry.revision}</span><code>{entry.digest}</code><i>VIEW EVENT ↗</i></a>)}</div>}
+      <p className="dialog-disclaimer">SHA-256 validates content integrity. It is not a digital signature. Transaction inclusion is reported separately and remains NOT_VERIFIED when the IOTA provider does not expose a transaction digest.</p>
+      <div className="dialog-actions">{explorer && <a href={explorer} target="_blank" rel="noreferrer">VIEW TWIN ON IOTA <span>↗</span></a>}<a href="https://www.rfc-editor.org/rfc/rfc8785" target="_blank" rel="noreferrer">OPEN RFC 8785 <span>↗</span></a></div>
+    </section>
+  </div>;
+}
+
+function AuditFact({ label, value, copy = false }) {
+  return <div><small>{label}</small><code>{String(value ?? "Unavailable")}</code>{copy && value && <Copy value={value} />}</div>;
 }
 
 function ThreadEventDialog({ event, network, onClose }) {
@@ -297,7 +377,7 @@ function Standards() {
   </section>;
 }
 
-function TwinVisual({ connected }) { return <div className="twin-visual" aria-label="Realistic digital representation of an industrial machine"><div className="orbit orbit-a"/><div className="orbit orbit-b"/><div className="scan-line"/><img className="machine-render" src="/digital-twin-machine-v2.png" alt="Automated industrial production machine represented by the Digital Twin"/><i className={`machine-link ${connected ? 'live' : ''}`}/><div className="visual-tag"><span>{connected ? 'LIVE' : 'LINK'}</span><small>DIGITAL REPRESENTATION</small></div></div> }
+function TwinVisual({ connected }) { return <div className="twin-visual" aria-label="Realistic digital representation of a five-axis CNC machine"><div className="orbit orbit-a"/><div className="orbit orbit-b"/><div className="scan-line"/><img className="machine-render" src="/digital-twin-cnc-5-axis-v3.png" alt="Five-axis CNC machining center represented by the Digital Twin"/><i className={`machine-link ${connected ? 'live' : ''}`}/><div className="visual-tag"><span>{connected ? 'LIVE' : 'LINK'}</span><small>5-AXIS CNC REPRESENTATION</small></div></div> }
 
 function TelemetryChart({ samples }) {
   const values = samples.slice(-30).map(s=>Number(s.measurements?.temperature?.value)).filter(Number.isFinite);
