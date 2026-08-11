@@ -15,6 +15,7 @@ export const openApiDocument = {
     "/health": { get: { summary: "Liveness", responses: { "200": { description: "Alive" } } } },
     "/ready": { get: { summary: "ObjectID and required dependency readiness", responses: { "200": { description: "Ready" }, "503": { description: "Not ready" } } } },
     "/api/v1/twins/{id}": { get: { summary: "Get Twin", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Twin" } } } },
+    "/api/v1/dids/{did}/twins": { get: { summary: "List Twins associated with a DID", responses: { "200": { description: "Twin summaries and DID roles" } } } },
     "/api/v1/twins": { post: { summary: "Create Twin", parameters: [{ name: "Idempotency-Key", in: "header", schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } }, responses: { "201": { description: "Created" } } } },
     "/api/v1/twins/{id}/states": { post: { summary: "Publish Twin state (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
     "/api/v1/twins/{id}/datasets": { post: { summary: "Register Twin dataset (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },

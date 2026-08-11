@@ -12,6 +12,17 @@ describe("HTTP integration", () => {
   beforeEach(() => { adapter = new FakeObjectIdAdapter(); adapter.twins.set("0xtwin", { id: "0xtwin", revision: 2 }); });
   afterEach(async () => { await rm(dataDirectory, { recursive: true, force: true }); });
 
+  it("lists only Twins associated with the requested DID and exposes the roles", async () => {
+    adapter.twins.set("0xowned", { name: "Owned CNC", owner_did: "did:iota:testnet:0xowner", creator_did: "did:iota:testnet:0xowner" });
+    adapter.twins.set("0xother", { name: "Other CNC", owner_did: "did:iota:testnet:0xother" });
+    const app = createApp(testConfig({ dataset: { directory: dataDirectory } }), adapter).app;
+
+    const response = await request(app).get("/api/v1/dids/did%3Aiota%3Atestnet%3A0xowner/twins");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([{ twinId: "0xowned", name: "Owned CNC", description: "", roles: ["owner", "creator"] }]);
+  });
+
   it("serves health, readiness and OpenAPI", async () => {
     const app = createApp(testConfig({ dataset: { directory: dataDirectory } }), adapter).app;
     expect((await request(app).get("/health")).status).toBe(200);

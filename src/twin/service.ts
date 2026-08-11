@@ -12,6 +12,7 @@ export class TwinService {
   ) {}
 
   getTwin(id: string) { return this.objectid.getTwin(id); }
+  findTwinsByDid(did: string) { return this.objectid.findTwinsByDid(did); }
   createTwin(input: unknown) { return this.objectid.createTwin(input); }
   updateTwin(id: string, input: unknown) { return this.objectid.updateTwin(id, input); }
   publishState(id: string, input: unknown) { return this.objectid.publishState(id, input); }

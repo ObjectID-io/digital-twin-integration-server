@@ -42,10 +42,20 @@ export interface IdentifierLookupResult {
   identifier: unknown;
 }
 
+export interface DidTwinSummary {
+  twinId: string;
+  name: string;
+  description: string;
+  lifecycleState?: number;
+  revision?: number;
+  roles: Array<"owner" | "creator" | "steward" | "twin">;
+}
+
 export interface ObjectIdAdapter {
   initialize?(): Promise<void>;
   isReady(): Promise<boolean>;
   getTwin(id: string): Promise<unknown>;
+  findTwinsByDid(did: string): Promise<DidTwinSummary[]>;
   createTwin(input: unknown): Promise<unknown>;
   updateTwin(id: string, input: unknown): Promise<unknown>;
   publishState(twinId: string, input: unknown): Promise<unknown>;

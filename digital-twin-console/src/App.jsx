@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";
 import { fieldsOf, LIFECYCLE, qualityScore, runQualityChecks, textOf } from "./quality.js";
 import { eventLabel, isIotaObjectId, objectExplorerUrl, transactionExplorerUrl } from "./thread-ui.js";
 import { validateAuditEvidence } from "./audit-validation.js";
@@ -39,12 +40,24 @@ export function App() {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [session, setSession] = useState(null);
+  const [selectedTwinId, setSelectedTwinId] = useState("");
+  const [loginOpen, setLoginOpen] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/session", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then(setSession)
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
     async function load() {
       try {
-        const response = await fetch("/api/dashboard", { cache: "no-store" });
+        const query = selectedTwinId ? `?twinId=${encodeURIComponent(selectedTwinId)}` : "";
+        const response = await fetch(`/api/dashboard${query}`, { cache: "no-store" });
         if (!response.ok) throw new Error(`Dashboard API ${response.status}`);
         const value = await response.json();
         if (active) {
@@ -57,15 +70,21 @@ export function App() {
     }
     void load();
     const poll = setInterval(load, 30_000);
-    const stream = new EventSource("/api/live");
-    stream.addEventListener("snapshot", (event) => active && setTelemetry(JSON.parse(event.data)));
-    stream.addEventListener("telemetry", (event) => {
+    const stream = selectedTwinId ? null : new EventSource("/api/live");
+    stream?.addEventListener("snapshot", (event) => active && setTelemetry(JSON.parse(event.data)));
+    stream?.addEventListener("telemetry", (event) => {
       if (!active) return;
       const { sample, received } = JSON.parse(event.data);
       setTelemetry((current) => ({ ...current, connected: true, latest: sample, received, samples: [...(current.samples ?? []), sample].slice(-60) }));
     });
-    return () => { active = false; clearInterval(poll); stream.close(); };
-  }, []);
+    return () => { active = false; clearInterval(poll); stream?.close(); };
+  }, [selectedTwinId]);
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setSession(null);
+    setSelectedTwinId("");
+  }
 
   const twinResult = dashboard?.twin;
   const twin = twinResult?.ok ? twinResult.data : null;
@@ -89,10 +108,16 @@ export function App() {
         </a>
         <div className="system-line">
           <StatusDot ok={readiness?.ready} label={readiness?.ready ? "SYSTEM NOMINAL" : "SYSTEM CHECK"} />
+          <span className={`data-source ${dashboard?.meta?.dataSource === "chain-only" ? "chain" : ""}`}>{dashboard?.meta?.dataSource === "chain-only" ? "CHAIN ONLY" : "BE + CHAIN"}</span>
           <span className="network">IOTA / {dashboard?.meta?.network?.toUpperCase() ?? "TESTNET"}</span>
           <LiveClock />
+          {session
+            ? <button className="did-session-button" type="button" onClick={logout}>LOGOUT <span>{shortId(session.did)}</span></button>
+            : <button className="did-login-button" type="button" onClick={() => setLoginOpen(true)}>DID LOGIN</button>}
         </div>
       </header>
+
+      {session && <TwinSelector session={session} selectedTwinId={selectedTwinId} onSelect={setSelectedTwinId} />}
 
       <nav className="tabs" aria-label="Console sections">
         {[['overview','Operational view'],['assurance','Quality assurance'],['thread','Digital thread'],['standards','Standards map']].map(([id,label]) => (
@@ -101,8 +126,10 @@ export function App() {
       </nav>
 
       {error && <div className="alert"><b>UPSTREAM DEGRADED</b><span>{error}</span></div>}
+      {dashboard?.meta?.dataSource === "chain-only" && <div className="chain-notice"><b>CHAIN-ONLY VIEW</b><span>The integration backend is unavailable or incomplete. Only evidence resolved directly from IOTA is shown; off-chain data is intentionally hidden.</span></div>}
       {latest?.simulationScenario && latest.simulationScenario !== "normal" && <div className="simulation-alert"><div><small>SIMULATED CNC FAULT</small><strong>{latest.simulationScenario.replaceAll("-", " ")}</strong></div><p>{SIMULATION_FAULTS[latest.simulationScenario] || "Injected simulator condition"}</p><span>{latest.operatingState?.toUpperCase() || "ALARM"}</span></div>}
       {loading && <Loading />}
+      {loginOpen && <DidLoginDialog onClose={() => setLoginOpen(false)} onAuthenticated={(value) => { setSession(value); setLoginOpen(false); }} />}
 
       {!loading && tab === "overview" && (
         <section className="view overview-view">
@@ -170,6 +197,76 @@ export function App() {
       </footer>
     </main>
   );
+}
+
+function TwinSelector({ session, selectedTwinId, onSelect }) {
+  return <section className="identity-console" aria-label="Authenticated DID Twins">
+    <div className="identity-principal"><span>AUTHENTICATED DID</span><strong title={session.did}>{shortId(session.did)}</strong><small>{shortId(session.address)}</small></div>
+    <div className="twin-selector-list">
+      <button type="button" className={!selectedTwinId ? "active" : ""} onClick={() => onSelect("")}><small>PUBLIC</small><strong>Demo Twin</strong><span>DEFAULT MODE</span></button>
+      {session.twins.map((twin) => <button type="button" className={selectedTwinId === twin.twinId ? "active" : ""} key={twin.twinId} onClick={() => onSelect(twin.twinId)}>
+        <small>{twin.roles.join(" / ").toUpperCase()}</small><strong>{twin.name || shortId(twin.twinId)}</strong><span>REV {twin.revision ?? "—"}</span>
+      </button>)}
+      {!session.twins.length && <p>No OIDTwin is currently associated with this DID.</p>}
+    </div>
+  </section>;
+}
+
+function DidLoginDialog({ onClose, onAuthenticated }) {
+  const [did, setDid] = useState("");
+  const [seed, setSeed] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+    const closeOnEscape = (event) => event.key === "Escape" && !busy && onClose();
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [busy, onClose]);
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const challengeResponse = await fetch("/api/auth/challenge", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ did: did.trim() }),
+      });
+      const challenge = await challengeResponse.json();
+      if (!challengeResponse.ok) throw new Error(challenge.error || "Unable to create login challenge");
+      const keypair = Ed25519Keypair.deriveKeypairFromSeed(seed.trim().replace(/^0x/i, ""));
+      const signed = await keypair.signPersonalMessage(new TextEncoder().encode(challenge.message));
+      setSeed("");
+      const verifyResponse = await fetch("/api/auth/verify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: challenge.challengeId, did: did.trim(), signature: signed.signature }),
+      });
+      const session = await verifyResponse.json();
+      if (!verifyResponse.ok) throw new Error(session.error || "DID authentication failed");
+      onAuthenticated(session);
+    } catch (cause) {
+      setSeed("");
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally { setBusy(false); }
+  }
+
+  return <div className="login-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
+    <section className="did-login-dialog" role="dialog" aria-modal="true" aria-labelledby="did-login-title" ref={dialogRef} tabIndex={-1}>
+      <button className="dialog-close" type="button" onClick={onClose} disabled={busy} aria-label="Close">×</button>
+      <span className="eyebrow">LOCAL SIGNATURE / ON-CHAIN PROOF</span>
+      <h2 id="did-login-title">Access your Digital Twins</h2>
+      <p>Your seed signs a one-time challenge inside this browser. It is never transmitted, logged or stored by ObjectID.</p>
+      <form onSubmit={submit} autoComplete="off">
+        <label><span>IOTA DID</span><input value={did} onChange={(event) => setDid(event.target.value)} placeholder="did:iota:testnet:0x..." autoComplete="username" required /></label>
+        <label><span>SEED</span><input value={seed} onChange={(event) => setSeed(event.target.value)} type="password" placeholder="Identity seed" autoComplete="off" spellCheck="false" data-1p-ignore required /></label>
+        {error && <div className="login-error">{error}</div>}
+        <div className="login-actions"><button type="button" onClick={onClose} disabled={busy}>KEEP DEMO MODE</button><button type="submit" disabled={busy}>{busy ? "VERIFYING ON IOTA…" : "SIGN & LOGIN"}</button></div>
+      </form>
+      <small className="login-security">Session: HttpOnly / SameSite Strict / 30 minutes</small>
+    </section>
+  </div>;
 }
 
 function Assurance({ checks, score, verification, readiness, twinId, network }) {

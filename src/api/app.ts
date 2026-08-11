@@ -125,6 +125,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const api = express.Router();
   api.use(authMiddleware(auth));
   api.use(idempotencyMiddleware(idempotency, config.idempotency.ttlMs));
+  api.get("/dids/:did/twins", async (request, response, next) => { try { response.json(await twins.findTwinsByDid(request.params.did!)); } catch (error) { next(error); } });
   api.get("/twins/:id", async (request, response, next) => { try { response.json(await twins.getTwin(request.params.id!)); } catch (error) { next(error); } });
   api.post("/twins", async (request, response, next) => { try { response.status(201).json(await twins.createProfiledTwin(request.body)); } catch (error) { next(error); } });
   api.get("/profiles", async (_request, response, next) => { try { response.json(await profiles.listProfiles()); } catch (error) { next(error); } });

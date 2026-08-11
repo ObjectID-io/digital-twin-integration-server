@@ -55,13 +55,15 @@ The testnet signer uses a `100000000` gas budget so state publication can cover 
 
 ## Digital Twin Console
 
-The `digital-twin-console` service publishes the read-only operational dashboard at `https://dt-demo.objectid.io` through the external `traefik_proxy` network. It keeps API and MQTT credentials server-side, streams live telemetry over SSE, and exposes technical congruity, coherence and standards-alignment checks.
+The `digital-twin-console` service publishes the read-only operational dashboard at `https://dt-demo.objectid.io` through the external `traefik_proxy` network. It keeps API and MQTT credentials server-side, streams live telemetry over SSE, and exposes technical congruity, coherence and standards-alignment checks. Demo mode remains the default; DID login signs a challenge in the browser and validates the signer against the on-chain Identity `ControllerCap` without sending the seed to the server.
 
 ```bash
 docker network inspect traefik_proxy >/dev/null
 docker compose up -d --build digital-twin-console
 docker compose logs -f digital-twin-console
 ```
+
+When the integration server cannot supply a logged-in user's Twin data, the console automatically enters `CHAIN ONLY` mode and resolves the Twin root, identifiers and Digital Thread events from testnet RPC/GraphQL. Off-chain sections remain empty by design. Rebuild the console image when deploying this feature because both browser and gateway dependencies changed.
 
 The console presents a technical self-assessment and does not claim formal ISO certification.
 

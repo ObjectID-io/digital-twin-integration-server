@@ -3,7 +3,7 @@ import { getFullnodeUrl, IotaClient } from "@iota/iota-sdk/client";
 import { AppError, mapObjectIdError } from "../common/errors.js";
 import type { AppConfig } from "../config/types.js";
 import type { CredentialProvider } from "../security/credentials.js";
-import type { IdentifierLookupResult, ObjectIdAdapter, TwinEvent, TwinRoleGrant, TwinStateEvidence } from "./types.js";
+import type { DidTwinSummary, IdentifierLookupResult, ObjectIdAdapter, TwinEvent, TwinRoleGrant, TwinStateEvidence } from "./types.js";
 import { IotaStatePublisher } from "./iotaStatePublisher.js";
 
 const require = createRequire(import.meta.url);
@@ -40,6 +40,36 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
   }
 
   async getTwin(id: string) { return this.oid.getObject(id, this.config.objectid.network); }
+
+  async findTwinsByDid(did: string): Promise<DidTwinSummary[]> {
+    if (!this.config.objectid.packageId) throw new AppError("OBJECTID_PACKAGE_ID_MISSING", "objectid.packageId is required", 503, "OBJECTID");
+    const normalizedDid = did.trim();
+    const type = `${this.config.objectid.packageId}::oid_twin::OIDTwin`;
+    const edges = await this.oid.getObjectsByType(type, this.config.objectid.network);
+    const twins = await Promise.all(edges.map(async (edge: any) => {
+      const embeddedFields = fieldsOf(edge);
+      return Object.keys(embeddedFields).length ? edge : this.oid.getObject(objectIdOf(edge), this.config.objectid.network);
+    }));
+    return twins.flatMap((raw: any) => {
+      const fields = fieldsOf(raw);
+      const roleFields = [
+        ["owner", fields.owner_did ?? fields.ownerDid],
+        ["creator", fields.creator_did ?? fields.creatorDid],
+        ["steward", fields.steward_did ?? fields.stewardDid],
+        ["twin", fields.twin_did ?? fields.twinDid],
+      ] as const;
+      const roles = roleFields.filter(([, value]) => String(value ?? "").trim() === normalizedDid).map(([role]) => role);
+      if (!roles.length) return [];
+      return [{
+        twinId: objectIdOf(raw),
+        name: String(fields.name ?? ""),
+        description: String(fields.description ?? ""),
+        lifecycleState: optionalNumber(fields.lifecycle_state ?? fields.lifecycleState),
+        revision: optionalNumber(fields.revision),
+        roles,
+      }];
+    }).filter((item) => item.twinId);
+  }
 
   private async mutate(method: string, payload: unknown) {
     const candidate = this.oid[method];
@@ -223,3 +253,9 @@ function stateEvidenceOf(objectId: string, fields: any): TwinStateEvidence {
 }
 
 function isIotaObjectId(value: string) { return /^0x[0-9a-f]{64}$/i.test(value); }
+
+function optionalNumber(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}

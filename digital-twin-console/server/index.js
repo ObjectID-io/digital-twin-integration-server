@@ -3,6 +3,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import mqtt from "mqtt";
+import { DidAuthService } from "./did-auth.js";
+import { ChainReader } from "./chain-reader.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const config = {
@@ -11,6 +13,9 @@ const config = {
   credentialsFile: process.env.DTIS_CREDENTIAL_FILE ?? "/run/secrets/dtis_credentials",
   twinId: process.env.TWIN_ID ?? "",
   network: process.env.IOTA_NETWORK ?? "testnet",
+  rpcUrl: process.env.IOTA_RPC_URL ?? "",
+  graphqlUrl: process.env.IOTA_GRAPHQL_URL ?? "https://graphql.testnet.iota.cafe/",
+  authAudience: process.env.DID_AUTH_AUDIENCE ?? "dt-demo.objectid.io",
   packageId: process.env.IOTA_PACKAGE_ID ?? "",
   mqttUrl: process.env.MQTT_URL ?? "mqtt://mosquitto:1883",
   mqttTopic: process.env.MQTT_TOPIC ?? "objectid/twins/telemetry/dataset",
@@ -29,6 +34,7 @@ if (!mqttPassword) throw new Error("MQTT password is empty");
 
 const app = express();
 app.disable("x-powered-by");
+app.use(express.json({ limit: "16kb" }));
 app.use((_request, response, next) => {
   response.set({
     "X-Content-Type-Options": "nosniff",
@@ -40,6 +46,8 @@ app.use((_request, response, next) => {
 
 const live = { connected: false, latest: null, samples: [], received: 0, lastError: null };
 const streams = new Set();
+const didAuth = new DidAuthService({ network: config.network, rpcUrl: config.rpcUrl, audience: config.authAudience });
+const chain = new ChainReader({ network: config.network, rpcUrl: config.rpcUrl, graphqlUrl: config.graphqlUrl, packageId: config.packageId });
 const mqttClient = mqtt.connect(config.mqttUrl, {
   username: config.mqttUsername,
   password: mqttPassword,
@@ -77,6 +85,32 @@ app.get("/api/meta", (_request, response) => response.json({
   twinId: config.twinId, network: config.network, packageId: config.packageId, mqttTopic: config.mqttTopic
 }));
 app.get("/api/telemetry", (_request, response) => response.json(publicLive()));
+app.post("/api/auth/challenge", (request, response, next) => {
+  try { response.set("Cache-Control", "no-store").json(didAuth.createChallenge(request.body?.did)); } catch (error) { next(error); }
+});
+app.post("/api/auth/verify", async (request, response, next) => {
+  try {
+    const result = await didAuth.verify(request.body ?? {}, listTwinsForDid);
+    response.setHeader("Set-Cookie", sessionCookie(result.token));
+    response.set("Cache-Control", "no-store").json(result.session);
+  } catch (error) { next(error); }
+});
+app.get("/api/auth/session", (request, response) => {
+  const session = requestSession(request);
+  response.set("Cache-Control", "no-store");
+  if (!session) return response.status(401).json({ error: "No active DID session" });
+  response.json(session);
+});
+app.post("/api/auth/logout", (request, response) => {
+  didAuth.destroy(cookieValue(request, "oid_dt_session"));
+  response.setHeader("Set-Cookie", sessionCookie("", 0));
+  response.status(204).end();
+});
+app.get("/api/my/twins", (request, response) => {
+  const session = requestSession(request);
+  if (!session) return response.status(401).json({ error: "DID login required" });
+  response.set("Cache-Control", "no-store").json(session.twins);
+});
 app.get("/api/live", (request, response) => {
   response.set({
     "Content-Type": "text/event-stream",
@@ -91,9 +125,15 @@ app.get("/api/live", (request, response) => {
   request.on("close", () => { clearInterval(heartbeat); streams.delete(response); });
 });
 
-app.get("/api/dashboard", async (_request, response) => {
-  const twinPath = `/api/v1/twins/${encodeURIComponent(config.twinId)}`;
-  const [health, readiness, twin, thread, verification, report, identifiers] = await Promise.all([
+app.get("/api/dashboard", async (request, response) => {
+  const requestedTwinId = String(request.query.twinId ?? config.twinId);
+  if (requestedTwinId !== config.twinId) {
+    const session = requestSession(request);
+    if (!session) return response.status(401).json({ error: "DID login required" });
+    if (!session.twins.some((twin) => twin.twinId === requestedTwinId)) return response.status(403).json({ error: "Twin is not associated with the authenticated DID" });
+  }
+  const twinPath = `/api/v1/twins/${encodeURIComponent(requestedTwinId)}`;
+  let [health, readiness, twin, thread, verification, report, identifiers] = await Promise.all([
     fetchJson("/health", false),
     fetchJson("/ready", false),
     fetchJson(twinPath),
@@ -102,12 +142,31 @@ app.get("/api/dashboard", async (_request, response) => {
     fetchJson(`${twinPath}/thread/verify/report?limit=100`),
     fetchJson(`${twinPath}/identifiers`)
   ]);
+  let dataSource = "integration-server";
+  if (!twin.ok || !thread.ok || !identifiers.ok) {
+    try {
+      const fallback = await chain.dashboard(requestedTwinId);
+      if (!twin.ok) twin = { ok: true, status: 200, data: fallback.twin };
+      if (!thread.ok) thread = { ok: true, status: 200, data: { items: fallback.events, hasMore: false, complete: true, source: "iota-chain" } };
+      if (!identifiers.ok) identifiers = { ok: true, status: 200, data: fallback.identifiers };
+      dataSource = "chain-only";
+    } catch (error) {
+      log("chain_fallback_failed", { twinId: requestedTwinId, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  if (!health.ok || !readiness.ok || !verification.ok || !report.ok) dataSource = "chain-only";
   response.set("Cache-Control", "no-store").json({
     generatedAt: new Date().toISOString(),
-    meta: { twinId: config.twinId, network: config.network, packageId: config.packageId },
+    meta: { twinId: requestedTwinId, network: config.network, packageId: config.packageId, mode: requestedTwinId === config.twinId ? "demo" : "did", dataSource },
     health, readiness, twin, thread, verification, report, identifiers,
-    telemetry: publicLive()
+    telemetry: dataSource === "integration-server" && requestedTwinId === config.twinId ? publicLive() : emptyLive()
   });
+});
+
+app.use("/api", (error, _request, response, _next) => {
+  const status = Number(error?.status) || 500;
+  if (status >= 500) log("api_error", { error: error instanceof Error ? error.message : String(error) });
+  response.status(status).json({ error: status >= 500 ? "Unexpected server error" : error.message });
 });
 
 const staticRoot = resolve(__dirname, "../dist");
@@ -134,6 +193,34 @@ async function fetchJson(path, authenticated = true) {
 
 function publicLive() {
   return { connected: live.connected, latest: live.latest, samples: live.samples, received: live.received, lastError: live.lastError };
+}
+
+function emptyLive() { return { connected: false, latest: null, samples: [], received: 0, lastError: null }; }
+
+async function listTwinsForDid(did) {
+  const result = await fetchJson(`/api/v1/dids/${encodeURIComponent(did)}/twins`);
+  if (result.ok) return Array.isArray(result.data) ? result.data : [];
+  try { return await chain.listTwinsByDid(did); }
+  catch (cause) {
+    const error = new Error(`Unable to discover DID Twins from the integration server or IOTA: ${cause instanceof Error ? cause.message : String(cause)}`);
+    error.status = 503;
+    throw error;
+  }
+}
+
+function requestSession(request) { return didAuth.session(cookieValue(request, "oid_dt_session")); }
+
+function cookieValue(request, name) {
+  const header = String(request.headers.cookie ?? "");
+  for (const part of header.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator > 0 && part.slice(0, separator).trim() === name) return decodeURIComponent(part.slice(separator + 1).trim());
+  }
+  return "";
+}
+
+function sessionCookie(token, maxAge = 1800) {
+  return `oid_dt_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
 }
 
 function broadcast(event, payload) {

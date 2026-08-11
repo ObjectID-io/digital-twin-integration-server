@@ -10,6 +10,15 @@ export class FakeObjectIdAdapter implements ObjectIdAdapter {
   private sequence = 0;
   async isReady() { return true; }
   async getTwin(id: string) { return this.twins.get(id) ?? null; }
+  async findTwinsByDid(did: string) {
+    return [...this.twins.entries()].flatMap(([twinId, value]: [string, any]) => {
+      const roles = ([
+        ["owner", value?.owner_did], ["creator", value?.creator_did],
+        ["steward", value?.steward_did], ["twin", value?.twin_did],
+      ] as const).filter(([, candidate]) => candidate === did).map(([role]) => role);
+      return roles.length ? [{ twinId, name: String(value?.name ?? ""), description: String(value?.description ?? ""), roles }] : [];
+    });
+  }
   async createTwin(input: any) { const id = input.id ?? `0xtwin${++this.sequence}`; const twin = { id, ...input }; this.twins.set(id, twin); this.calls.push({ method: "createTwin", input }); return twin; }
   async updateTwin(id: string, input: any) { const twin = { ...(this.twins.get(id) ?? { id }), ...input }; this.twins.set(id, twin); this.calls.push({ method: "updateTwin", twinId: id, input }); return twin; }
   async publishState(twinId: string, input: unknown) { return this.record("publishState", twinId, input); }
