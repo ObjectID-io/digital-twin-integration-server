@@ -242,7 +242,7 @@ function Thread({ dashboard }) {
   const network = dashboard?.meta?.network ?? "testnet";
   return <section className="view thread-view">
     <div className="thread-head"><div><span className="eyebrow">ISO 23247-5:2026</span><h2>Digital thread</h2><p>Native revision-ordered sequence of OIDTwin events.</p></div><div className={`verification-seal ${verification?.valid ? 'valid' : ''}`}><span>{verification?.valid ? 'VERIFIED' : 'PENDING'}</span><strong>{verification?.eventCount ?? items.length}</strong><small>EVENTS</small></div></div>
-    {items.length ? <div className="timeline">{items.map((event,index)=><button type="button" className="timeline-event" key={event.eventId ?? index} onClick={() => setSelectedEvent(event)} aria-haspopup="dialog"><span className="timeline-node"/><div className="timeline-rev">R{event.revisionAfter ?? index+1}</div><div><strong>{eventLabel(event.eventType)}</strong><p>{event.actorDid || 'Actor DID unavailable'}</p><code>{shortId(event.eventId)}</code></div><time>{formatChainTime(event.createdAt)}</time><span className="timeline-open">DETAILS ↗</span></button>)}</div> : dashboard?.thread?.ok ? <Empty title="Digital Thread is empty" text="No OIDTwinEvent records are currently associated with this Twin." /> : <Empty title="Digital Thread unavailable" text={dashboard?.thread?.error || "The on-chain event sequence could not be read."} />}
+    {items.length ? <div className="timeline">{items.map((event,index)=><button type="button" className="timeline-event" key={event.eventId ?? index} onClick={() => setSelectedEvent(event)} aria-haspopup="dialog"><span className="timeline-node"/><div className="timeline-rev">R{event.revisionAfter ?? index+1}</div><div><strong>{eventSummary(event)}</strong><p>{event.actorDid || 'Actor DID unavailable'}</p><code>{shortId(event.eventId)}</code></div><time>{formatChainTime(event.createdAt)}</time><span className="timeline-open">DETAILS ↗</span></button>)}</div> : dashboard?.thread?.ok ? <Empty title="Digital Thread is empty" text="No OIDTwinEvent records are currently associated with this Twin." /> : <Empty title="Digital Thread unavailable" text={dashboard?.thread?.error || "The on-chain event sequence could not be read."} />}
     <AuditEvidencePanel items={items} verification={verification} report={report} network={network} twinId={dashboard?.meta?.twinId} />
     {selectedEvent && <ThreadEventDialog event={selectedEvent} network={network} onClose={() => setSelectedEvent(null)} />}
   </section>;
@@ -347,6 +347,11 @@ function ThreadEventDialog({ event, network, onClose }) {
   const objectUrl = objectExplorerUrl(event.eventId, network);
   const twinUrl = objectExplorerUrl(event.twinId, network);
   const transactionUrl = event.transactionDigest ? transactionExplorerUrl(event.transactionDigest, network) : "";
+  const state = event.referencedState;
+  const payload = state?.payload && typeof state.payload === "object" ? state.payload : null;
+  const transition = payload?.transition;
+  const measurements = payload?.measurements;
+  const stateUrl = state?.objectId ? objectExplorerUrl(state.objectId, network) : "";
   return <div className="check-dialog-backdrop" role="presentation" onMouseDown={(mouseEvent) => mouseEvent.target === mouseEvent.currentTarget && onClose()}>
     <section ref={dialogRef} tabIndex="-1" className="check-dialog thread-event-dialog panel" role="dialog" aria-modal="true" aria-labelledby="thread-event-title">
       <button type="button" className="dialog-close" onClick={onClose} aria-label="Close event details">CLOSE <span aria-hidden="true">X</span></button>
@@ -356,19 +361,29 @@ function ThreadEventDialog({ event, network, onClose }) {
         <b className="dialog-status">REV {event.revisionAfter}</b>
       </div>
       <div className="dialog-evidence"><small>REVISION TRANSITION</small><strong>{event.revisionBefore} → {event.revisionAfter}</strong><span>{formatChainTime(event.createdAt)}</span></div>
+      {state && <div className="state-evidence">
+        <div className="state-evidence-head"><div><small>REFERENCED OIDTWINSTATE</small><h3>{transitionLabel(transition, payload)}</h3></div><span>QUALITY {state.qualityScore}/100</span></div>
+        {transition && <div className="state-transition"><small>STATE TRANSITION</small><strong>{transition.fromScenario} <span>→</span> {transition.toScenario}</strong><p>{transition.kind} · {transition.source}</p></div>}
+        <div className="state-tags"><span>ASPECT / {state.aspectCode}</span><span>SAMPLE / {state.sampleType}</span><span>OBSERVED / {formatChainTime(state.observedAt)}</span></div>
+        {measurements && <div className="state-measurements">{Object.entries(measurements).map(([name, measurement])=><div key={name}><small>{humanize(name)}</small><strong>{measurement?.value ?? '—'}</strong><span>{measurement?.unit ?? ''}</span></div>)}</div>}
+        {payload && <details className="state-payload"><summary>INSPECT HASHED PAYLOAD</summary><pre>{JSON.stringify(payload,null,2)}</pre></details>}
+      </div>}
       <div className="event-detail-list">
         <EventField label="EVENT OBJECT ID" value={event.eventId} copy />
         <EventField label="TWIN OBJECT ID" value={event.twinId} copy />
         <EventField label="ACTOR DID" value={event.actorDid} copy />
-        <EventField label="PAYLOAD REFERENCE" value={event.payloadRef || "Not provided"} copy={Boolean(event.payloadRef)} />
-        <EventField label="PAYLOAD HASH" value={event.payloadHash || "Not provided"} copy={Boolean(event.payloadHash)} />
+        <EventField label={state ? "REFERENCED STATE OBJECT ID" : "PAYLOAD REFERENCE"} value={event.payloadRef || "Not provided"} copy={Boolean(event.payloadRef)} />
+        <EventField label="EVENT PAYLOAD HASH" value={event.payloadHash || "Not encoded by this package version"} copy={Boolean(event.payloadHash)} />
+        {state && <EventField label="STATE PAYLOAD HASH" value={state.payloadHash ? `sha256:${state.payloadHash.replace(/^sha256:/, '')}` : "Not provided"} copy={Boolean(state.payloadHash)} />}
+        {state && <EventField label="SOURCE URI" value={state.sourceUri || "Not provided"} copy={Boolean(state.sourceUri)} />}
         <EventField label="TRANSACTION DIGEST" value={event.transactionDigest || "Not exposed by the current provider"} copy={Boolean(event.transactionDigest)} />
       </div>
-      <p className="dialog-disclaimer">This record is an OIDTwinEvent child object stored on IOTA. Payload bodies may remain off-chain; the event stores their reference and integrity hash when supplied.</p>
+      <p className="dialog-disclaimer">The E030 record points to an on-chain OIDTwinState. Its payload hash verifies the referenced state body; the event-level hash remains empty in the currently published Move package.</p>
       <div className="dialog-actions">
         {isIotaObjectId(event.eventId) && <a href={objectUrl} target="_blank" rel="noreferrer">VIEW EVENT ON IOTA <span>↗</span></a>}
         {isIotaObjectId(event.twinId) && <a href={twinUrl} target="_blank" rel="noreferrer">VIEW TWIN ON IOTA <span>↗</span></a>}
         {transactionUrl && <a href={transactionUrl} target="_blank" rel="noreferrer">VIEW TRANSACTION <span>↗</span></a>}
+        {stateUrl && <a href={stateUrl} target="_blank" rel="noreferrer">VIEW STATE ON IOTA <span>↗</span></a>}
       </div>
     </section>
   </div>;
@@ -403,6 +418,9 @@ function LiveClock() { const [now,setNow]=useState(new Date()); useEffect(()=>{c
 function Empty({title,text}) { return <div className="empty panel"><span>NO DATA</span><h3>{title}</h3><p>{text}</p></div> }
 function Loading() { return <div className="loading"><i/><span>Synchronizing digital representation</span></div> }
 function shortId(value="") { return value.length > 20 ? `${value.slice(0,10)}…${value.slice(-8)}` : value || '—'; }
+function eventSummary(event) { const payload=event.referencedState?.payload; const transition=payload && typeof payload==='object' ? payload.transition : null; return transition ? `${humanize(transition.kind)} · ${transition.toScenario}` : eventLabel(event.eventType); }
+function transitionLabel(transition,payload) { return transition ? humanize(transition.kind) : payload?.simulationScenario ? `${humanize(payload.simulationScenario)} state observation` : 'State observation'; }
+function humanize(value='') { return String(value).replace(/[-_]/g,' ').replace(/\b\w/g,letter=>letter.toUpperCase()); }
 function formatChainTime(value) { const number=Number(value); if(!number)return '—'; return new Date(number < 1e12 ? number*1000:number).toLocaleString('en-GB'); }
 function linePath(values,min,max) { if(!values.length)return ''; return values.map((v,i)=>`${i?'L':'M'} ${(i/Math.max(1,values.length-1))*1000} ${165-((v-min)/(max-min))*140}`).join(' '); }
 function areaPath(values,min,max) { const line=linePath(values,min,max); return line ? `${line} L 1000 180 L 0 180 Z` : ''; }

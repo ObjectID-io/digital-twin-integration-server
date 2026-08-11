@@ -9,6 +9,24 @@ export interface TwinEvent {
   payloadHash: string;
   createdAt: number;
   transactionDigest?: string;
+  referencedState?: TwinStateEvidence;
+}
+
+export interface TwinStateEvidence {
+  objectId: string;
+  aspectCode: string;
+  sampleType: string;
+  sourceUri: string;
+  payloadHash: string;
+  payloadUri: string;
+  payloadInline: string;
+  payload?: unknown;
+  observedAt: number;
+  validFrom: number;
+  validTo: number;
+  qualityScore: number;
+  creatorDid: string;
+  superseded: boolean;
 }
 
 export interface TwinRoleGrant {

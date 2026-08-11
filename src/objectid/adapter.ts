@@ -3,7 +3,7 @@ import { getFullnodeUrl, IotaClient } from "@iota/iota-sdk/client";
 import { AppError, mapObjectIdError } from "../common/errors.js";
 import type { AppConfig } from "../config/types.js";
 import type { CredentialProvider } from "../security/credentials.js";
-import type { IdentifierLookupResult, ObjectIdAdapter, TwinEvent, TwinRoleGrant } from "./types.js";
+import type { IdentifierLookupResult, ObjectIdAdapter, TwinEvent, TwinRoleGrant, TwinStateEvidence } from "./types.js";
 import { IotaStatePublisher } from "./iotaStatePublisher.js";
 
 const require = createRequire(import.meta.url);
@@ -88,6 +88,13 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
           const object = await this.rpcClient.getObject({ id: event.eventId, options: { showPreviousTransaction: true } });
           event.transactionDigest = object.data?.previousTransaction ?? undefined;
         } catch { /* Event data remains usable when transaction metadata is temporarily unavailable. */ }
+      }
+      if (event.eventType === 30 && isIotaObjectId(event.payloadRef)) {
+        try {
+          const state = await this.rpcClient.getObject({ id: event.payloadRef, options: { showContent: true } });
+          const fields = fieldsOf(state);
+          if (String(state.data?.type ?? "").endsWith("::oid_twin::OIDTwinState")) event.referencedState = stateEvidenceOf(event.payloadRef, fields);
+        } catch { /* The event remains authoritative even if its referenced state cannot be resolved. */ }
       }
       return event;
     }));
@@ -190,3 +197,27 @@ function eventOf(raw: any): TwinEvent {
       ?? raw?.data?.previousTransaction ?? raw?.data?.previous_transaction,
   };
 }
+
+function stateEvidenceOf(objectId: string, fields: any): TwinStateEvidence {
+  const payloadInline = String(fields.payload_inline ?? "");
+  let payload: unknown;
+  try { payload = payloadInline ? JSON.parse(payloadInline) : undefined; } catch { payload = payloadInline || undefined; }
+  return {
+    objectId,
+    aspectCode: String(fields.aspect_code ?? ""),
+    sampleType: String(fields.sample_type ?? ""),
+    sourceUri: String(fields.source_uri ?? ""),
+    payloadHash: String(fields.payload_hash ?? ""),
+    payloadUri: String(fields.payload_uri ?? ""),
+    payloadInline,
+    payload,
+    observedAt: Number(fields.observed_at ?? 0),
+    validFrom: Number(fields.valid_from ?? 0),
+    validTo: Number(fields.valid_to ?? 0),
+    qualityScore: Number(fields.quality_score ?? 0),
+    creatorDid: String(fields.creator_did ?? ""),
+    superseded: Boolean(fields.superseded),
+  };
+}
+
+function isIotaObjectId(value: string) { return /^0x[0-9a-f]{64}$/i.test(value); }

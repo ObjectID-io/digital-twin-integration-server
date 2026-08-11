@@ -56,6 +56,34 @@
   font: 9px "IBM Plex Mono";
 }
 
+.state-evidence {
+  margin-top: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, #d5ff520b, #79f2bd08);
+}
+
+.state-evidence-head { display: flex; justify-content: space-between; gap: 24px; align-items: start; }
+.state-evidence-head small,
+.state-transition small { color: var(--muted); font: 9px "IBM Plex Mono"; letter-spacing: .12em; }
+.state-evidence-head h3 { margin: 8px 0 0; font-size: 28px; }
+.state-evidence-head > span { color: var(--acid); font: 10px "IBM Plex Mono"; white-space: nowrap; }
+.state-transition { margin-top: 20px; padding: 18px; border-left: 2px solid var(--acid); background: #07110eaa; }
+.state-transition strong { display: block; margin-top: 9px; font: 18px "IBM Plex Mono"; }
+.state-transition strong span { color: var(--acid); }
+.state-transition p { margin: 8px 0 0; color: var(--muted); font: 10px "IBM Plex Mono"; }
+.state-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.state-tags span { padding: 7px 9px; border: 1px solid var(--line); color: #9fc4b7; font: 8px "IBM Plex Mono"; }
+.state-measurements { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 16px; border: 1px solid var(--line); }
+.state-measurements > div { padding: 12px; border-right: 1px solid var(--line); }
+.state-measurements > div:last-child { border: 0; }
+.state-measurements small { display: block; min-height: 22px; color: var(--muted); font: 8px "IBM Plex Mono"; }
+.state-measurements strong { font: 18px "IBM Plex Mono"; }
+.state-measurements span { margin-left: 5px; color: var(--muted); font: 8px "IBM Plex Mono"; }
+.state-payload { margin-top: 14px; border-top: 1px solid var(--line); }
+.state-payload summary { padding: 13px 0 0; color: var(--acid); cursor: pointer; font: 9px "IBM Plex Mono"; letter-spacing: .1em; }
+.state-payload pre { max-height: 260px; overflow: auto; margin: 14px 0 0; padding: 16px; background: #030806; color: #a8c9bd; font: 9px/1.55 "IBM Plex Mono"; white-space: pre-wrap; overflow-wrap: anywhere; }
+
 .event-detail-list {
   margin-top: 24px;
   border-top: 1px solid var(--line);
@@ -91,4 +119,8 @@
   .timeline-open::after { content: "VIEW"; font-size: 8px; }
   .event-detail-list > div { grid-template-columns: 1fr 50px; gap: 8px; padding: 14px 0; }
   .event-detail-list small { grid-column: 1 / -1; }
+  .state-evidence-head { display: block; }
+  .state-evidence-head > span { display: block; margin-top: 12px; }
+  .state-measurements { grid-template-columns: repeat(2, 1fr); }
+  .state-measurements > div { border-bottom: 1px solid var(--line); }
 }
