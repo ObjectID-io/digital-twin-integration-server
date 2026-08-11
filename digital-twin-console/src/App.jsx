@@ -3,6 +3,7 @@ import { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";
 import { fieldsOf, LIFECYCLE, qualityScore, runQualityChecks, textOf } from "./quality.js";
 import { eventLabel, isIotaObjectId, objectExplorerUrl, transactionExplorerUrl } from "./thread-ui.js";
 import { validateAuditEvidence } from "./audit-validation.js";
+import "./auth.css";
 
 const STANDARD_ROWS = [
   { ref: "ISO/IEC 30188:2026", area: "Reference architecture", evidence: "Autonomous OIDTwin root with identity, lifecycle, data, model, interface and governance views", status: "Aligned", url: "https://www.iso.org/standard/53308.html" },
@@ -43,6 +44,7 @@ export function App() {
   const [session, setSession] = useState(null);
   const [selectedTwinId, setSelectedTwinId] = useState("");
   const [loginOpen, setLoginOpen] = useState(false);
+  const [twinPickerOpen, setTwinPickerOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/session", { cache: "no-store" })
@@ -112,12 +114,12 @@ export function App() {
           <span className="network">IOTA / {dashboard?.meta?.network?.toUpperCase() ?? "TESTNET"}</span>
           <LiveClock />
           {session
-            ? <button className="did-session-button" type="button" onClick={logout}>LOGOUT <span>{shortId(session.did)}</span></button>
+            ? <div className="did-session-controls"><button className="did-session-button" type="button" onClick={() => setTwinPickerOpen(true)}>MY DIGITAL TWINS</button><button className="did-logout-button" type="button" onClick={logout}>LOGOUT</button></div>
             : <button className="did-login-button" type="button" onClick={() => setLoginOpen(true)}>DID LOGIN</button>}
         </div>
       </header>
 
-      {session && <TwinSelector session={session} selectedTwinId={selectedTwinId} onSelect={setSelectedTwinId} />}
+      {session && <TwinSelector session={session} selectedTwinId={selectedTwinId} onOpen={() => setTwinPickerOpen(true)} />}
 
       <nav className="tabs" aria-label="Console sections">
         {[['overview','Operational view'],['assurance','Quality assurance'],['thread','Digital thread'],['standards','Standards map']].map(([id,label]) => (
@@ -129,7 +131,8 @@ export function App() {
       {dashboard?.meta?.dataSource === "chain-only" && <div className="chain-notice"><b>CHAIN-ONLY VIEW</b><span>The integration backend is unavailable or incomplete. Only evidence resolved directly from IOTA is shown; off-chain data is intentionally hidden.</span></div>}
       {latest?.simulationScenario && latest.simulationScenario !== "normal" && <div className="simulation-alert"><div><small>SIMULATED CNC FAULT</small><strong>{latest.simulationScenario.replaceAll("-", " ")}</strong></div><p>{SIMULATION_FAULTS[latest.simulationScenario] || "Injected simulator condition"}</p><span>{latest.operatingState?.toUpperCase() || "ALARM"}</span></div>}
       {loading && <Loading />}
-      {loginOpen && <DidLoginDialog onClose={() => setLoginOpen(false)} onAuthenticated={(value) => { setSession(value); setLoginOpen(false); }} />}
+      {loginOpen && <DidLoginDialog onClose={() => setLoginOpen(false)} onAuthenticated={(value) => { setSession(value); setLoginOpen(false); setTwinPickerOpen(true); }} />}
+      {session && twinPickerOpen && <TwinPicker session={session} selectedTwinId={selectedTwinId} onClose={() => setTwinPickerOpen(false)} onSelect={(twinId) => { setSelectedTwinId(twinId); setTwinPickerOpen(false); }} />}
 
       {!loading && tab === "overview" && (
         <section className="view overview-view">
@@ -199,17 +202,45 @@ export function App() {
   );
 }
 
-function TwinSelector({ session, selectedTwinId, onSelect }) {
+function TwinSelector({ session, selectedTwinId, onOpen }) {
+  const selected = session.twins.find((twin) => twin.twinId === selectedTwinId);
   return <section className="identity-console" aria-label="Authenticated DID Twins">
-    <div className="identity-principal"><span>AUTHENTICATED DID</span><strong title={session.did}>{shortId(session.did)}</strong><small>{shortId(session.address)}</small></div>
-    <div className="twin-selector-list">
-      <button type="button" className={!selectedTwinId ? "active" : ""} onClick={() => onSelect("")}><small>PUBLIC</small><strong>Demo Twin</strong><span>DEFAULT MODE</span></button>
-      {session.twins.map((twin) => <button type="button" className={selectedTwinId === twin.twinId ? "active" : ""} key={twin.twinId} onClick={() => onSelect(twin.twinId)}>
-        <small>{twin.roles.join(" / ").toUpperCase()}</small><strong>{twin.name || shortId(twin.twinId)}</strong><span>REV {twin.revision ?? "—"}</span>
-      </button>)}
-      {!session.twins.length && <p>No OIDTwin is currently associated with this DID.</p>}
-    </div>
+    <div className="identity-principal"><span>SIGNED IN WITH DID</span><strong title={session.did}>{shortId(session.did)}</strong><small>Signer {shortId(session.address)}</small></div>
+    <div className="selected-twin-summary"><span>CURRENT VIEW</span><strong>{selected?.name || "Public Demo Twin"}</strong><small>{selected ? `Your relationship: ${roleLabels(selected.roles).join(", ")} · Revision ${selected.revision ?? "—"}` : "Public example · No ownership implied"}</small></div>
+    <button className="open-twin-picker" type="button" onClick={onOpen}>SELECT DIGITAL TWIN <span>↗</span></button>
   </section>;
+}
+
+function TwinPicker({ session, selectedTwinId, onClose, onSelect }) {
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    dialogRef.current?.focus();
+    const closeOnEscape = (event) => event.key === "Escape" && onClose();
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+  return <div className="login-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section className="twin-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="twin-picker-title" ref={dialogRef} tabIndex={-1}>
+      <button className="dialog-close" type="button" onClick={onClose} aria-label="Close">×</button>
+      <span className="eyebrow">AUTHENTICATED WORKSPACE</span>
+      <h2 id="twin-picker-title">Choose a Digital Twin</h2>
+      <p>Select the public demonstration or one of the OIDTwins associated on-chain with your authenticated DID.</p>
+      <div className="twin-choice-list">
+        <button type="button" className={!selectedTwinId ? "active" : ""} onClick={() => onSelect("")}>
+          <span className="choice-kind">PUBLIC DEMONSTRATION</span><strong>Demo Twin</strong><p>Shared example with simulated CNC telemetry. It is not one of your Digital Twins.</p><small>{!selectedTwinId ? "CURRENTLY OPEN" : "OPEN DEMO"}</small>
+        </button>
+        {session.twins.map((twin) => <button type="button" className={selectedTwinId === twin.twinId ? "active" : ""} key={twin.twinId} onClick={() => onSelect(twin.twinId)}>
+          <span className="choice-kind">YOUR DIGITAL TWIN</span><strong>{twin.name || shortId(twin.twinId)}</strong><p>Your relationship to this Twin: <b>{roleLabels(twin.roles).join(", ")}</b>. Current on-chain revision: {twin.revision ?? "not available"}.</p><code>{shortId(twin.twinId)}</code><small>{selectedTwinId === twin.twinId ? "CURRENTLY OPEN" : "OPEN TWIN"}</small>
+        </button>)}
+      </div>
+      {!session.twins.length && <div className="no-personal-twins"><b>NO PERSONAL TWINS FOUND</b><span>The DID login is valid, but no OIDTwin currently references this DID as owner, creator, steward or Twin identity.</span></div>}
+    </section>
+  </div>;
+}
+
+function roleLabels(roles = []) {
+  const labels = { owner: "Owner", creator: "Creator", steward: "Steward", twin: "Twin identity" };
+  return roles.map((role) => labels[role] || humanize(role));
 }
 
 function DidLoginDialog({ onClose, onAuthenticated }) {
