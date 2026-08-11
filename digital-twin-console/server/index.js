@@ -113,7 +113,7 @@ app.get("/api/dashboard", async (_request, response) => {
 const staticRoot = resolve(__dirname, "../dist");
 app.use(express.static(staticRoot, { immutable: true, maxAge: "1y", index: false }));
 app.use((request, response, next) => {
-  if (request.method !== "GET" || request.path.startsWith("/api/")) return next();
+  if (!["GET", "HEAD"].includes(request.method) || request.path.startsWith("/api/")) return next();
   response.set("Cache-Control", "no-cache").sendFile(resolve(staticRoot, "index.html"));
 });
 app.use((_request, response) => response.status(404).json({ error: "Not found" }));

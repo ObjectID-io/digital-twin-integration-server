@@ -23,6 +23,8 @@ docker compose ps
 curl --fail http://127.0.0.1:8080/ready
 ```
 
+The simulator entrypoint reads root-owned Compose secrets, copies them into its private in-memory `tmpfs`, and then drops privileges before starting Node.js. Keep the host-side secret files at mode `0600`.
+
 Publish a state sample from the VPS:
 
 ```bash
