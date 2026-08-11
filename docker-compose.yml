@@ -138,16 +138,16 @@ services:
       MQTT_USERNAME: ${MQTT_USERNAME:-objectid}
       MQTT_PASSWORD_FILE: /run/secrets/mqtt_password
       MQTT_TOPIC: ${SIM_MQTT_TOPIC:-objectid/twins/telemetry/dataset}
+      SIM_STATE_TOPIC: objectid/twins/telemetry/state
       MQTT_QOS: "1"
       SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-5000}
       SIM_ASSET_ID: ${SIM_ASSET_ID:-0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b}
       SIM_MACHINE_NAME: ${SIM_MACHINE_NAME:-mqtt-vps-twin}
       HEALTH_PORT: "8081"
-      SIM_CONTROL_USERNAME: ${SIM_CONTROL_USERNAME:-objectid-admin}
-      SIM_CONTROL_PASSWORD_FILE: /run/secrets/sim_control_password
+      SIM_CONTROL_USERNAME: demo
+      SIM_CONTROL_PASSWORD: demo
     secrets:
       - mqtt_password
-      - sim_control_password
     networks:
       - default
       - traefik_proxy
@@ -241,5 +241,3 @@ secrets:
     file: ./secrets/credentials.json
   mqtt_password:
     file: ./secrets/mqtt_password.txt
-  sim_control_password:
-    file: ./secrets/sim_control_password.txt

@@ -5,12 +5,15 @@ import { applyCommand, createControlServer } from "../src/control-server.js";
 
 test("applies simulator control commands", () => {
   const control = { scenario: "normal", paused: false };
-  applyCommand({ action: "scenario", scenario: "overheat" }, control);
+  const transition = applyCommand({ action: "scenario", scenario: "overheat" }, control);
   assert.equal(control.scenario, "overheat");
+  assert.deepEqual(transition, { previousScenario: "normal", scenarioChanged: true });
+  assert.equal(applyCommand({ action: "scenario", scenario: "overheat" }, control).scenarioChanged, false);
   applyCommand({ action: "pause" }, control);
   assert.equal(control.paused, true);
-  applyCommand({ action: "reset" }, control);
+  const cleared = applyCommand({ action: "reset" }, control);
   assert.deepEqual({ scenario: control.scenario, paused: control.paused }, { scenario: "normal", paused: false });
+  assert.deepEqual(cleared, { previousScenario: "overheat", scenarioChanged: true });
 });
 
 test("rejects unknown scenarios", () => {
@@ -20,7 +23,12 @@ test("rejects unknown scenarios", () => {
 test("protects the control API and applies authenticated commands", async (context) => {
   const status = { connected: true, published: 3 };
   const control = { scenario: "normal", paused: false };
-  const server = createControlServer({ status, control, username: "operator", password: "secret", port: 0, publishNow: async () => undefined });
+  const transitions = [];
+  const server = createControlServer({
+    status, control, username: "operator", password: "secret", port: 0,
+    publishNow: async () => undefined,
+    recordTransition: async (transition) => transitions.push(transition),
+  });
   context.after(() => server.close());
   await once(server, "listening");
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -32,4 +40,5 @@ test("protects the control API and applies authenticated commands", async (conte
   });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).scenario, "pressure-loss");
+  assert.deepEqual(transitions, [{ from: "normal", to: "pressure-loss" }]);
 });

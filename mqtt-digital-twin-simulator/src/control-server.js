@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { SCENARIOS } from "./telemetry.js";
 
-export function createControlServer({ status, control, username, password, port, publishNow }) {
+export function createControlServer({ status, control, username, password, port, publishNow, recordTransition = async () => undefined }) {
   const server = createServer(async (request, response) => {
     setSecurityHeaders(response);
     if (request.url === "/health") return json(response, status.connected ? 200 : 503, publicStatus(status, control));
@@ -14,8 +14,9 @@ export function createControlServer({ status, control, username, password, port,
     if (request.method === "POST" && request.url === "/api/control") {
       try {
         const command = await readJson(request);
-        applyCommand(command, control);
+        const result = applyCommand(command, control);
         await publishNow();
+        if (result.scenarioChanged) await recordTransition({ from: result.previousScenario, to: control.scenario });
         return json(response, 200, publicStatus(status, control));
       } catch (error) {
         return json(response, 400, { error: error instanceof Error ? error.message : String(error) });
@@ -32,12 +33,14 @@ export function createControlServer({ status, control, username, password, port,
 }
 
 export function applyCommand(command, control) {
+  const previousScenario = control.scenario;
   if (command?.action === "pause") control.paused = true;
   else if (command?.action === "resume") control.paused = false;
   else if (command?.action === "reset") { control.paused = false; control.scenario = "normal"; }
   else if (command?.action === "scenario" && SCENARIOS.includes(command.scenario)) control.scenario = command.scenario;
   else if (command?.action !== "publish") throw new Error("Unsupported simulator command");
   control.changedAt = new Date().toISOString();
+  return { previousScenario, scenarioChanged: previousScenario !== control.scenario };
 }
 
 function publicStatus(status, control) {

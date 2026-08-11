@@ -8,13 +8,14 @@ const config = {
   username: process.env.MQTT_USERNAME ?? "objectid",
   passwordFile: process.env.MQTT_PASSWORD_FILE ?? "/run/secrets/mqtt_password",
   topic: process.env.MQTT_TOPIC ?? "objectid/twins/telemetry/dataset",
+  stateTopic: process.env.SIM_STATE_TOPIC ?? "objectid/twins/telemetry/state",
   qos: integer("MQTT_QOS", 1, 0, 2),
   intervalMs: integer("SIM_INTERVAL_MS", 5000, 1000, 86_400_000),
   assetId: process.env.SIM_ASSET_ID ?? "unknown",
   machineName: process.env.SIM_MACHINE_NAME ?? "mqtt-digital-twin",
   healthPort: integer("HEALTH_PORT", 8081, 1, 65535),
-  controlUsername: process.env.SIM_CONTROL_USERNAME ?? "objectid-admin",
-  controlPasswordFile: process.env.SIM_CONTROL_PASSWORD_FILE ?? "/run/secrets/sim_control_password"
+  controlUsername: process.env.SIM_CONTROL_USERNAME ?? "demo",
+  controlPassword: process.env.SIM_CONTROL_PASSWORD ?? "demo"
 };
 
 const status = {
@@ -26,8 +27,7 @@ const status = {
 
 const password = (await readFile(config.passwordFile, "utf8")).trimEnd();
 if (!password) throw new Error("MQTT password file is empty");
-const controlPassword = (await readFile(config.controlPasswordFile, "utf8")).trimEnd();
-if (!controlPassword) throw new Error("Simulator control password file is empty");
+if (!config.controlPassword) throw new Error("Simulator control password is empty");
 
 const client = mqtt.connect(config.mqttUrl, {
   username: config.username,
@@ -59,7 +59,10 @@ client.on("error", (error) => {
 });
 
 Object.assign(status, { machineName: config.machineName, topic: config.topic });
-const healthServer = createControlServer({ status, control, username: config.controlUsername, password: controlPassword, port: config.healthPort, publishNow: publishSample });
+const healthServer = createControlServer({
+  status, control, username: config.controlUsername, password: config.controlPassword,
+  port: config.healthPort, publishNow: publishSample, recordTransition: publishStateTransition,
+});
 
 async function publishSample() {
   if (!client.connected || publishing || control.paused) return;
@@ -78,6 +81,25 @@ async function publishSample() {
   } finally {
     publishing = false;
   }
+}
+
+async function publishStateTransition({ from, to }) {
+  if (!client.connected) throw new Error("MQTT broker is unavailable");
+  sequence += 1;
+  const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario: to });
+  const transition = {
+    ...sample,
+    transition: {
+      kind: to === "normal" ? "fault-cleared" : "fault-opened",
+      fromScenario: from,
+      toScenario: to,
+      source: "dt-simulator-control",
+      occurredAt: sample.observedAt,
+    },
+  };
+  await client.publishAsync(config.stateTopic, JSON.stringify(transition), { qos: config.qos, retain: false });
+  status.lastTransitionAt = sample.observedAt;
+  log("fault_transition_published", { from, to, topic: config.stateTopic, sequence });
 }
 
 async function shutdown(signal) {

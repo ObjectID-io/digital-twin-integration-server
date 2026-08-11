@@ -8,7 +8,6 @@ This deployment starts the ObjectID Digital Twin Integration Server, an authenti
 2. Set `B2_KEY_ID` in `secrets/credentials.json` to the Backblaze Application Key ID. The bucket ID is not an S3 credential.
 3. Set `MQTT_TWIN_ID` to an existing `OIDTwin` object created with the published testnet package.
 4. Keep `MQTT_PASSWORD` in `secrets/credentials.json` identical to the contents of `secrets/mqtt_password.txt`.
-5. Create `secrets/sim_control_password.txt` with a strong password for the public simulator console.
 
 The supplied Backblaze application key is kept only in the ignored local credentials file. Rotate it if this workspace or conversation has been shared.
 
@@ -18,14 +17,14 @@ The supplied Backblaze application key is kept only in the ignored local credent
 cp .env.vps.example .env
 chmod 700 secrets
 chmod 600 .env
-chmod 644 secrets/credentials.json secrets/mqtt_password.txt secrets/sim_control_password.txt
+chmod 644 secrets/credentials.json secrets/mqtt_password.txt
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 curl --fail http://127.0.0.1:8080/ready
 ```
 
-Docker Compose implements local file-backed secrets as bind mounts and does not remap their host permissions. Keep the `secrets` directory at mode `0700` and its mounted files at `0644`; the private parent directory protects them on the VPS while allowing the non-root container processes to read the mounts. The simulator runs without Linux capabilities on a read-only filesystem.
+Docker Compose implements local file-backed secrets as bind mounts and does not remap their host permissions. Keep the `secrets` directory at mode `0700` and its mounted files at `0644`; the private parent directory protects them on the VPS while allowing the non-root container processes to read the mounts. The simulator runs without Linux capabilities on a read-only filesystem. The `demo/demo` credentials intentionally protect only the demonstration UI and are not secrets.
 
 Publish a state sample from the VPS:
 
@@ -46,7 +45,7 @@ docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-serv
 
 Set `SIM_INTERVAL_MS` or `SIM_MACHINE_NAME` in `.env` to customize it. Do not switch `SIM_MQTT_TOPIC` to the state topic unless on-chain state publication and its OID Credit cost are intended.
 
-The authenticated control console is available at `https://dt-simulator.objectid.io`. Its username is configured by `SIM_CONTROL_USERNAME` and its password is read from `secrets/sim_control_password.txt`. It can inject overheat, high-vibration, spindle-overload, pressure-loss and emergency-stop telemetry, or pause and resume publication.
+The demo control console is available at `https://dt-simulator.objectid.io` with `demo/demo`. It can inject overheat, high-vibration, spindle-overload, pressure-loss and emergency-stop telemetry, or pause and resume publication. Every scenario transition also publishes one state message; the integration server records the resulting `OIDTwinState` and event 30 in the on-chain Digital Thread, consuming one OID Credit per transition rather than per telemetry sample.
 
 ## Digital Twin Console
 
