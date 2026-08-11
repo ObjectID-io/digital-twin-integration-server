@@ -15,6 +15,8 @@ The default topic is `objectid/twins/telemetry/dataset`. Samples are emitted eve
 | `SIM_INTERVAL_MS` | `5000` | Sample interval, minimum 1000 ms. |
 | `SIM_ASSET_ID` | `unknown` | Object ID included in each sample. |
 | `SIM_MACHINE_NAME` | `mqtt-digital-twin` | Simulated machine name. |
+| `SIM_CONTROL_USERNAME` | `objectid-admin` | Username for the HTTPS control console. |
+| `SIM_CONTROL_PASSWORD_FILE` | `/run/secrets/sim_control_password` | Docker secret containing the control-console password. |
 
 To publish on-chain state updates instead, set `SIM_MQTT_TOPIC=objectid/twins/telemetry/state`. Each processed state can consume an OID Credit, so use a suitably long interval.
 
@@ -25,3 +27,5 @@ docker compose up -d --build mqtt-digital-twin-simulator
 docker compose ps
 docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-server
 ```
+
+Open `https://dt-simulator.objectid.io` to inject CNC fault scenarios and control the telemetry stream. The console uses HTTP Basic authentication and must only be exposed through HTTPS.

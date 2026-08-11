@@ -25,6 +25,14 @@ const QUALITY_DETAILS = {
   "SYS-01": { method: "Evaluate the integration server readiness aggregate for required dependencies.", expected: "ObjectID, profile loading, MQTT and object storage must all report operational readiness.", source: "Integration server readiness endpoint", standard: "ISO 23247-2:2021", scope: "Functional entities and reference architecture for a manufacturing Digital Twin.", url: "https://www.iso.org/standard/78743.html", explorer: false }
 };
 
+const SIMULATION_FAULTS = {
+  overheat: "Spindle temperature exceeds the nominal operating envelope",
+  "high-vibration": "Mechanical vibration exceeds the configured alarm threshold",
+  "spindle-overload": "Spindle speed and active power indicate an overload condition",
+  "pressure-loss": "Pneumatic pressure is below the safe operating threshold",
+  "emergency-stop": "Emergency stop is active; spindle and power output are zero",
+};
+
 export function App() {
   const [dashboard, setDashboard] = useState(null);
   const [telemetry, setTelemetry] = useState({ connected: false, latest: null, samples: [], received: 0 });
@@ -93,6 +101,7 @@ export function App() {
       </nav>
 
       {error && <div className="alert"><b>UPSTREAM DEGRADED</b><span>{error}</span></div>}
+      {latest?.simulationScenario && latest.simulationScenario !== "normal" && <div className="simulation-alert"><div><small>SIMULATED CNC FAULT</small><strong>{latest.simulationScenario.replaceAll("-", " ")}</strong></div><p>{SIMULATION_FAULTS[latest.simulationScenario] || "Injected simulator condition"}</p><span>{latest.operatingState?.toUpperCase() || "ALARM"}</span></div>}
       {loading && <Loading />}
 
       {!loading && tab === "overview" && (
@@ -118,11 +127,11 @@ export function App() {
           <section className="telemetry-section">
             <SectionTitle index="01" title="Live telemetry" note={`${telemetry.received} samples received`} />
             <div className="metric-rail">
-              <Metric name="Temperature" metric={latest?.measurements?.temperature} accent="hot" />
-              <Metric name="Vibration" metric={latest?.measurements?.vibration} accent="signal" />
-              <Metric name="Rotational speed" metric={latest?.measurements?.rotationalSpeed} />
-              <Metric name="Active power" metric={latest?.measurements?.activePower} />
-              <Metric name="Pressure" metric={latest?.measurements?.pressure} />
+              <Metric name="Temperature" metric={latest?.measurements?.temperature} accent="hot" alarm={Number(latest?.measurements?.temperature?.value) > 85} />
+              <Metric name="Vibration" metric={latest?.measurements?.vibration} accent="signal" alarm={Number(latest?.measurements?.vibration?.value) > 5.5} />
+              <Metric name="Rotational speed" metric={latest?.measurements?.rotationalSpeed} alarm={Number(latest?.measurements?.rotationalSpeed?.value) > 4500} />
+              <Metric name="Active power" metric={latest?.measurements?.activePower} alarm={Number(latest?.measurements?.activePower?.value) > 25} />
+              <Metric name="Pressure" metric={latest?.measurements?.pressure} alarm={latest?.measurements?.pressure && Number(latest.measurements.pressure.value) < 4.5} />
             </div>
             <TelemetryChart samples={telemetry.samples ?? []} />
           </section>
@@ -385,7 +394,7 @@ function TelemetryChart({ samples }) {
   return <div className="chart-panel panel"><div className="chart-head"><span>TEMP / VIBRATION TREND</span><small>LAST {Math.max(values.length,vibration.length)} SAMPLES</small></div><svg viewBox="0 0 1000 180" preserveAspectRatio="none"><g className="grid-lines">{[30,75,120,165].map(y=><line key={y} x1="0" y1={y} x2="1000" y2={y}/>)}</g><path className="area" d={areaPath(values,45,85)}/><path className="line-temp" d={linePath(values,45,85)}/><path className="line-vibration" d={linePath(vibration,0,6)}/></svg><div className="chart-legend"><span className="temp">Temperature</span><span className="vibration">Vibration</span><small>MQTT · QoS 1 · 5 sec</small></div></div>;
 }
 
-function Metric({ name, metric, accent="" }) { return <div className={`metric ${accent}`}><span>{name}</span><strong>{metric?.value ?? '—'}</strong><small>{metric?.unit ?? 'WAITING'}</small><i/></div> }
+function Metric({ name, metric, accent="", alarm=false }) { return <div className={`metric ${accent} ${alarm ? 'alarm' : ''}`}><span>{name}</span><strong>{metric?.value ?? '—'}</strong><small>{alarm ? 'ALARM / ' : ''}{metric?.unit ?? 'WAITING'}</small><i/></div> }
 function Detail({ label, value, mono=false, title }) { return <div className="detail"><span>{label}</span><strong className={mono?'mono':''} title={title || value}>{value || '—'}</strong></div> }
 function SectionTitle({ index, title, note, compact=false }) { return <div className={`section-title ${compact?'compact':''}`}><span>{index}</span><h2>{title}</h2><small>{note}</small></div> }
 function StatusDot({ ok, label }) { return <span className={`status-dot ${ok?'ok':''}`}><i/>{label}</span> }

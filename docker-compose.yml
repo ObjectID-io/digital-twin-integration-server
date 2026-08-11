@@ -143,8 +143,29 @@ services:
       SIM_ASSET_ID: ${SIM_ASSET_ID:-0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b}
       SIM_MACHINE_NAME: ${SIM_MACHINE_NAME:-mqtt-vps-twin}
       HEALTH_PORT: "8081"
+      SIM_CONTROL_USERNAME: ${SIM_CONTROL_USERNAME:-objectid-admin}
+      SIM_CONTROL_PASSWORD_FILE: /run/secrets/sim_control_password
     secrets:
       - mqtt_password
+      - sim_control_password
+    networks:
+      - default
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.dt-simulator.rule=Host(`dt-simulator.objectid.io`)"
+      - "traefik.http.routers.dt-simulator.entrypoints=websecure"
+      - "traefik.http.routers.dt-simulator.tls=true"
+      - "traefik.http.routers.dt-simulator.tls.certresolver=myresolver"
+      - "traefik.http.routers.dt-simulator.middlewares=dt-simulator-sec@docker"
+      - "traefik.http.services.dt-simulator.loadbalancer.server.port=8081"
+      - "traefik.http.middlewares.dt-simulator-sec.headers.stsSeconds=63072000"
+      - "traefik.http.middlewares.dt-simulator-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.dt-simulator-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.dt-simulator-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.dt-simulator-sec.headers.referrerPolicy=no-referrer"
+      - "traefik.http.middlewares.dt-simulator-sec.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
     read_only: true
     tmpfs:
       - /tmp
@@ -184,7 +205,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.http.routers.dt-console.rule=Host(`dt.objectid.io`)"
+      - "traefik.http.routers.dt-console.rule=Host(`dt-demo.objectid.io`)"
       - "traefik.http.routers.dt-console.entrypoints=websecure"
       - "traefik.http.routers.dt-console.tls=true"
       - "traefik.http.routers.dt-console.tls.certresolver=myresolver"
@@ -220,3 +241,5 @@ secrets:
     file: ./secrets/credentials.json
   mqtt_password:
     file: ./secrets/mqtt_password.txt
+  sim_control_password:
+    file: ./secrets/sim_control_password.txt

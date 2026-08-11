@@ -1,6 +1,6 @@
 # ObjectID Digital Twin Console
 
-Read-only operational console for the ObjectID Digital Twin deployed at `dt.objectid.io`.
+Read-only operational console for the ObjectID Digital Twin deployed at `dt-demo.objectid.io`.
 
 The Node gateway serves the React application, subscribes to MQTT telemetry, exposes it to the browser through Server-Sent Events, and proxies a fixed set of read operations to the integration server. API keys and MQTT credentials remain Docker secrets and are never returned to the browser.
 

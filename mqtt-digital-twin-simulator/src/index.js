@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { createServer } from "node:http";
 import mqtt from "mqtt";
 import { createTelemetry } from "./telemetry.js";
+import { createControlServer } from "./control-server.js";
 
 const config = {
   mqttUrl: process.env.MQTT_URL ?? "mqtt://mosquitto:1883",
@@ -12,7 +12,9 @@ const config = {
   intervalMs: integer("SIM_INTERVAL_MS", 5000, 1000, 86_400_000),
   assetId: process.env.SIM_ASSET_ID ?? "unknown",
   machineName: process.env.SIM_MACHINE_NAME ?? "mqtt-digital-twin",
-  healthPort: integer("HEALTH_PORT", 8081, 1, 65535)
+  healthPort: integer("HEALTH_PORT", 8081, 1, 65535),
+  controlUsername: process.env.SIM_CONTROL_USERNAME ?? "objectid-admin",
+  controlPasswordFile: process.env.SIM_CONTROL_PASSWORD_FILE ?? "/run/secrets/sim_control_password"
 };
 
 const status = {
@@ -24,6 +26,8 @@ const status = {
 
 const password = (await readFile(config.passwordFile, "utf8")).trimEnd();
 if (!password) throw new Error("MQTT password file is empty");
+const controlPassword = (await readFile(config.controlPasswordFile, "utf8")).trimEnd();
+if (!controlPassword) throw new Error("Simulator control password file is empty");
 
 const client = mqtt.connect(config.mqttUrl, {
   username: config.username,
@@ -37,6 +41,7 @@ const client = mqtt.connect(config.mqttUrl, {
 let sequence = 0;
 let timer;
 let publishing = false;
+const control = { scenario: "normal", paused: false, changedAt: new Date().toISOString() };
 
 client.on("connect", () => {
   status.connected = true;
@@ -53,23 +58,20 @@ client.on("error", (error) => {
   log("mqtt_error", { error: error.message });
 });
 
-const healthServer = createServer((_request, response) => {
-  response.writeHead(status.connected ? 200 : 503, { "content-type": "application/json" });
-  response.end(JSON.stringify({ ...status, machineName: config.machineName, topic: config.topic }));
-});
-healthServer.listen(config.healthPort, "127.0.0.1");
+Object.assign(status, { machineName: config.machineName, topic: config.topic });
+const healthServer = createControlServer({ status, control, username: config.controlUsername, password: controlPassword, port: config.healthPort, publishNow: publishSample });
 
 async function publishSample() {
-  if (!client.connected || publishing) return;
+  if (!client.connected || publishing || control.paused) return;
   publishing = true;
   try {
     sequence += 1;
-    const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId });
+    const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario: control.scenario });
     await client.publishAsync(config.topic, JSON.stringify(sample), { qos: config.qos, retain: false });
     status.published += 1;
     status.lastPublishedAt = sample.observedAt;
     status.lastError = null;
-    log("telemetry_published", { sequence, topic: config.topic });
+    log("telemetry_published", { sequence, topic: config.topic, scenario: control.scenario });
   } catch (error) {
     status.lastError = error instanceof Error ? error.message : String(error);
     log("publish_error", { error: status.lastError });

@@ -8,6 +8,7 @@ This deployment starts the ObjectID Digital Twin Integration Server, an authenti
 2. Set `B2_KEY_ID` in `secrets/credentials.json` to the Backblaze Application Key ID. The bucket ID is not an S3 credential.
 3. Set `MQTT_TWIN_ID` to an existing `OIDTwin` object created with the published testnet package.
 4. Keep `MQTT_PASSWORD` in `secrets/credentials.json` identical to the contents of `secrets/mqtt_password.txt`.
+5. Create `secrets/sim_control_password.txt` with a strong password for the public simulator console.
 
 The supplied Backblaze application key is kept only in the ignored local credentials file. Rotate it if this workspace or conversation has been shared.
 
@@ -15,7 +16,7 @@ The supplied Backblaze application key is kept only in the ignored local credent
 
 ```bash
 cp .env.vps.example .env
-chmod 600 .env secrets/credentials.json secrets/mqtt_password.txt
+chmod 600 .env secrets/credentials.json secrets/mqtt_password.txt secrets/sim_control_password.txt
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
@@ -41,9 +42,11 @@ docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-serv
 
 Set `SIM_INTERVAL_MS` or `SIM_MACHINE_NAME` in `.env` to customize it. Do not switch `SIM_MQTT_TOPIC` to the state topic unless on-chain state publication and its OID Credit cost are intended.
 
+The authenticated control console is available at `https://dt-simulator.objectid.io`. Its username is configured by `SIM_CONTROL_USERNAME` and its password is read from `secrets/sim_control_password.txt`. It can inject overheat, high-vibration, spindle-overload, pressure-loss and emergency-stop telemetry, or pause and resume publication.
+
 ## Digital Twin Console
 
-The `digital-twin-console` service publishes the read-only operational dashboard at `https://dt.objectid.io` through the external `traefik_proxy` network. It keeps API and MQTT credentials server-side, streams live telemetry over SSE, and exposes technical congruity, coherence and standards-alignment checks.
+The `digital-twin-console` service publishes the read-only operational dashboard at `https://dt-demo.objectid.io` through the external `traefik_proxy` network. It keeps API and MQTT credentials server-side, streams live telemetry over SSE, and exposes technical congruity, coherence and standards-alignment checks.
 
 ```bash
 docker network inspect traefik_proxy >/dev/null
