@@ -1,15 +1,10 @@
 import { createServer } from "node:http";
-import { timingSafeEqual } from "node:crypto";
 import { SCENARIOS } from "./telemetry.js";
 
-export function createControlServer({ status, control, username, password, port, publishNow, recordTransition = async () => undefined }) {
+export function createControlServer({ status, control, port, publishNow, recordTransition = async () => undefined }) {
   const server = createServer(async (request, response) => {
     setSecurityHeaders(response);
     if (request.url === "/health") return json(response, status.connected ? 200 : 503, publicStatus(status, control));
-    if (!authorized(request.headers.authorization, username, password)) {
-      response.setHeader("www-authenticate", 'Basic realm="ObjectID Digital Twin Simulator", charset="UTF-8"');
-      return json(response, 401, { error: "Authentication required" });
-    }
     if (request.method === "GET" && request.url === "/api/status") return json(response, 200, publicStatus(status, control));
     if (request.method === "POST" && request.url === "/api/control") {
       try {
@@ -45,19 +40,6 @@ export function applyCommand(command, control) {
 
 function publicStatus(status, control) {
   return { ...status, scenario: control.scenario, paused: control.paused, changedAt: control.changedAt };
-}
-
-function authorized(header, username, password) {
-  if (!header?.startsWith("Basic ")) return false;
-  const decoded = Buffer.from(header.slice(6), "base64").toString("utf8");
-  const separator = decoded.indexOf(":");
-  if (separator < 0) return false;
-  return safeEqual(decoded.slice(0, separator), username) && safeEqual(decoded.slice(separator + 1), password);
-}
-
-function safeEqual(actual, expected) {
-  const left = Buffer.from(actual); const right = Buffer.from(expected);
-  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 async function readJson(request) {

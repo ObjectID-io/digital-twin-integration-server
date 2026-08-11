@@ -15,8 +15,6 @@ The default topic is `objectid/twins/telemetry/dataset`. Samples are emitted eve
 | `SIM_INTERVAL_MS` | `5000` | Sample interval, minimum 1000 ms. |
 | `SIM_ASSET_ID` | `unknown` | Object ID included in each sample. |
 | `SIM_MACHINE_NAME` | `mqtt-digital-twin` | Simulated machine name. |
-| `SIM_CONTROL_USERNAME` | `demo` | Username for the HTTPS demo console. |
-| `SIM_CONTROL_PASSWORD` | `demo` | Password for the HTTPS demo console. Do not reuse this setup outside the public demo. |
 | `SIM_STATE_TOPIC` | `objectid/twins/telemetry/state` | Topic used once per fault transition to create an on-chain State Published event. |
 
 To publish on-chain state updates instead, set `SIM_MQTT_TOPIC=objectid/twins/telemetry/state`. Each processed state can consume an OID Credit, so use a suitably long interval.
@@ -29,4 +27,4 @@ docker compose ps
 docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-server
 ```
 
-Open `https://dt-simulator.objectid.io` with `demo/demo` to inject CNC fault scenarios and control the telemetry stream. Each scenario transition publishes one state message, producing an on-chain `OIDTwinState` and `EVENT_STATE_PUBLISHED` Digital Thread record through the integration server. Repeated telemetry samples remain in the aggregated dataset and do not consume one OID Credit each.
+Open `https://dt-simulator.objectid.io` to inject CNC fault scenarios and control the telemetry stream without authentication. Each scenario transition publishes one state message, producing an on-chain `OIDTwinState` and `EVENT_STATE_PUBLISHED` Digital Thread record through the integration server. Repeated telemetry samples remain in the aggregated dataset and do not consume one OID Credit each.

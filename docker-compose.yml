@@ -144,8 +144,6 @@ services:
       SIM_ASSET_ID: ${SIM_ASSET_ID:-0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b}
       SIM_MACHINE_NAME: ${SIM_MACHINE_NAME:-mqtt-vps-twin}
       HEALTH_PORT: "8081"
-      SIM_CONTROL_USERNAME: demo
-      SIM_CONTROL_PASSWORD: demo
     secrets:
       - mqtt_password
     networks:

@@ -24,7 +24,7 @@ docker compose ps
 curl --fail http://127.0.0.1:8080/ready
 ```
 
-Docker Compose implements local file-backed secrets as bind mounts and does not remap their host permissions. Keep the `secrets` directory at mode `0700` and its mounted files at `0644`; the private parent directory protects them on the VPS while allowing the non-root container processes to read the mounts. The simulator runs without Linux capabilities on a read-only filesystem. The `demo/demo` credentials intentionally protect only the demonstration UI and are not secrets.
+Docker Compose implements local file-backed secrets as bind mounts and does not remap their host permissions. Keep the `secrets` directory at mode `0700` and its mounted files at `0644`; the private parent directory protects them on the VPS while allowing the non-root container processes to read the mounts. The simulator runs without Linux capabilities on a read-only filesystem.
 
 Publish a state sample from the VPS:
 
@@ -45,7 +45,7 @@ docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-serv
 
 Set `SIM_INTERVAL_MS` or `SIM_MACHINE_NAME` in `.env` to customize it. Do not switch `SIM_MQTT_TOPIC` to the state topic unless on-chain state publication and its OID Credit cost are intended.
 
-The demo control console is available at `https://dt-simulator.objectid.io` with `demo/demo`. It can inject overheat, high-vibration, spindle-overload, pressure-loss and emergency-stop telemetry, or pause and resume publication. Every scenario transition also publishes one state message; the integration server records the resulting `OIDTwinState` and event 30 in the on-chain Digital Thread, consuming one OID Credit per transition rather than per telemetry sample.
+The unauthenticated demo control console is available at `https://dt-simulator.objectid.io`. It can inject overheat, high-vibration, spindle-overload, pressure-loss and emergency-stop telemetry, or pause and resume publication. Every scenario transition also publishes one state message; the integration server records the resulting `OIDTwinState` and event 30 in the on-chain Digital Thread, consuming one OID Credit per transition rather than per telemetry sample.
 
 ## Digital Twin Console
 

@@ -13,9 +13,7 @@ const config = {
   intervalMs: integer("SIM_INTERVAL_MS", 5000, 1000, 86_400_000),
   assetId: process.env.SIM_ASSET_ID ?? "unknown",
   machineName: process.env.SIM_MACHINE_NAME ?? "mqtt-digital-twin",
-  healthPort: integer("HEALTH_PORT", 8081, 1, 65535),
-  controlUsername: process.env.SIM_CONTROL_USERNAME ?? "demo",
-  controlPassword: process.env.SIM_CONTROL_PASSWORD ?? "demo"
+  healthPort: integer("HEALTH_PORT", 8081, 1, 65535)
 };
 
 const status = {
@@ -27,8 +25,6 @@ const status = {
 
 const password = (await readFile(config.passwordFile, "utf8")).trimEnd();
 if (!password) throw new Error("MQTT password file is empty");
-if (!config.controlPassword) throw new Error("Simulator control password is empty");
-
 const client = mqtt.connect(config.mqttUrl, {
   username: config.username,
   password,
@@ -60,8 +56,8 @@ client.on("error", (error) => {
 
 Object.assign(status, { machineName: config.machineName, topic: config.topic });
 const healthServer = createControlServer({
-  status, control, username: config.controlUsername, password: config.controlPassword,
-  port: config.healthPort, publishNow: publishSample, recordTransition: publishStateTransition,
+  status, control, port: config.healthPort, publishNow: publishSample,
+  recordTransition: publishStateTransition,
 });
 
 async function publishSample() {
