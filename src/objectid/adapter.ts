@@ -93,7 +93,9 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
         try {
           const state = await this.rpcClient.getObject({ id: event.payloadRef, options: { showContent: true } });
           const fields = fieldsOf(state);
-          if (String(state.data?.type ?? "").endsWith("::oid_twin::OIDTwinState")) event.referencedState = stateEvidenceOf(event.payloadRef, fields);
+          const content = state.data?.content;
+          const moveType = state.data?.type ?? (content?.dataType === "moveObject" ? content.type : undefined);
+          if (String(moveType ?? "").endsWith("::oid_twin::OIDTwinState")) event.referencedState = stateEvidenceOf(event.payloadRef, fields);
         } catch { /* The event remains authoritative even if its referenced state cannot be resolved. */ }
       }
       return event;

@@ -18,7 +18,7 @@ describe("ProviderObjectIdAdapter event metadata", () => {
     };
     const getObject = vi.fn(async ({ id }: { id: string }) => id === eventId
       ? { data: { previousTransaction: "tx-digest" } }
-      : { data: { type: "0xpackage::oid_twin::OIDTwinState", content: { fields: {
+      : { data: { content: { dataType: "moveObject", type: "0xpackage::oid_twin::OIDTwinState", fields: {
         aspect_code: "telemetry", sample_type: "observed", source_uri: "mqtt://state",
         payload_hash: "abc123", payload_uri: "", payload_inline: '{"simulationScenario":"overheat"}',
         observed_at: "123", valid_from: "123", valid_to: "0", quality_score: 100,
