@@ -25,6 +25,7 @@ export interface IdentifierLookupResult {
 }
 
 export interface ObjectIdAdapter {
+  initialize?(): Promise<void>;
   isReady(): Promise<boolean>;
   getTwin(id: string): Promise<unknown>;
   createTwin(input: unknown): Promise<unknown>;

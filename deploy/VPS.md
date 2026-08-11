@@ -8,8 +8,11 @@ This deployment starts the ObjectID Digital Twin Integration Server, an authenti
 2. Set `B2_KEY_ID` in `secrets/credentials.json` to the Backblaze Application Key ID. The bucket ID is not an S3 credential.
 3. Set `MQTT_TWIN_ID` to an existing `OIDTwin` object created with the published testnet package.
 4. Keep `MQTT_PASSWORD` in `secrets/credentials.json` identical to the contents of `secrets/mqtt_password.txt`.
+5. Set `DTIS_IOTA_SEED` to the 64-character hexadecimal seed, without `0x`, and set `DTIS_SIGNER_ADDRESS` to its derived IOTA address.
+6. Set `DTIS_TWIN_CONTROLLER_CAP_ID`, `DTIS_OID_CREDIT_POLICY_ID`, and `DTIS_OID_CREDIT_TOKEN_ID` to objects controlled by that signer.
 
 The supplied Backblaze application key is kept only in the ignored local credentials file. Rotate it if this workspace or conversation has been shared.
+The IOTA seed is equivalent to a private signing key. Never commit `secrets/credentials.json`; startup fails if the seed derives an address different from `DTIS_SIGNER_ADDRESS`.
 
 ## Start and verify
 
@@ -46,6 +49,8 @@ docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-serv
 Set `SIM_INTERVAL_MS` or `SIM_MACHINE_NAME` in `.env` to customize it. Do not switch `SIM_MQTT_TOPIC` to the state topic unless on-chain state publication and its OID Credit cost are intended.
 
 The unauthenticated demo control console is available at `https://dt-simulator.objectid.io`. It can inject overheat, high-vibration, spindle-overload, pressure-loss and emergency-stop telemetry, or pause and resume publication. Every scenario transition also publishes one state message; the integration server records the resulting `OIDTwinState` and event 30 in the on-chain Digital Thread, consuming one OID Credit per transition rather than per telemetry sample.
+
+Successful on-chain publication is logged as `iota_twin_state_published` with the transaction digest. A transition emitted before the signer was enabled is not replayed automatically; select a different scenario after deployment to generate a new state event.
 
 ## Digital Twin Console
 

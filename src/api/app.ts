@@ -71,7 +71,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const credentials = config.security.credentialProvider === "file"
     ? new FileCredentialProvider(config.security.credentialFile ?? "./secrets/credentials.json")
     : new EnvironmentCredentialProvider();
-  const objectid = adapter ?? new ProviderObjectIdAdapter(config);
+  const objectid = adapter ?? new ProviderObjectIdAdapter(config, undefined, credentials);
   const profiles = new ProfileRegistry(config.profiles.directory);
   const storage = new StorageProviderFactory(credentials).createRouter(config.storage);
   const twins = new TwinService(objectid, profiles, storage);
@@ -240,6 +240,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   return {
     app, connectors, objectid, idempotency, queue, worker, aggregator, storage,
     async startConnectors() {
+      await objectid.initialize?.();
       const resolved = await resolveCredentialReferences(config.connectors, credentials);
       await connectors.start(resolved as AppConfig["connectors"]);
     },

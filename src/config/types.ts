@@ -3,7 +3,22 @@ import type { StorageConfig } from "../storage/types.js";
 
 export interface AppConfig {
   server: { host: string; port: number; bodyLimitBytes: number; trustProxy: boolean };
-  objectid: { network: string; rpcUrl: string; packageId: string; timeoutMs: number };
+  objectid: {
+    network: string;
+    rpcUrl: string;
+    packageId: string;
+    timeoutMs: number;
+    signer?: {
+      enabled: boolean;
+      seedCredential: string;
+      addressCredential: string;
+      controllerCapCredential: string;
+      creditPolicyCredential: string;
+      creditTokenCredential: string;
+      clockId: string;
+      gasBudget: number;
+    };
+  };
   profiles: { directory: string };
   connectors: Record<string, { enabled: boolean; [key: string]: unknown }>;
   security: {

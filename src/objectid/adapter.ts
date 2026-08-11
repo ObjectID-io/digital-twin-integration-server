@@ -1,7 +1,9 @@
 import { createRequire } from "node:module";
 import { AppError, mapObjectIdError } from "../common/errors.js";
 import type { AppConfig } from "../config/types.js";
+import type { CredentialProvider } from "../security/credentials.js";
 import type { IdentifierLookupResult, ObjectIdAdapter, TwinEvent, TwinRoleGrant } from "./types.js";
+import { IotaStatePublisher } from "./iotaStatePublisher.js";
 
 const require = createRequire(import.meta.url);
 const { createOid } = require("@objectid/oid-provider/core") as { createOid: () => any };
@@ -16,7 +18,17 @@ function objectIdOf(value: any) {
 
 export class ProviderObjectIdAdapter implements ObjectIdAdapter {
   private readonly oid: any;
-  constructor(private readonly config: AppConfig, oid: any = createOid()) { this.oid = oid; }
+  private readonly statePublisher?: IotaStatePublisher;
+
+  constructor(private readonly config: AppConfig, oid: any = createOid(), credentials?: CredentialProvider) {
+    this.oid = oid;
+    if (config.objectid.signer?.enabled) {
+      if (!credentials) throw new AppError("OBJECTID_SIGNER_CREDENTIALS_REQUIRED", "The IOTA signer requires a credential provider", 503, "AUTHORIZATION");
+      this.statePublisher = new IotaStatePublisher(config.objectid, credentials);
+    }
+  }
+
+  async initialize() { await this.statePublisher?.initialize(); }
 
   async isReady() {
     try { await this.oid.session.config(this.config.objectid.network); return true; } catch { return false; }
@@ -39,7 +51,11 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
 
   createTwin(input: unknown) { return this.mutate("createTwin", input); }
   updateTwin(id: string, input: unknown) { return this.mutate("updateTwin", { twinId: id, ...asRecord(input) }); }
-  publishState(twinId: string, input: unknown) { return this.mutate("publishState", { twinId, ...asRecord(input) }); }
+  publishState(twinId: string, input: unknown) {
+    return this.statePublisher
+      ? this.statePublisher.publishState(twinId, asRecord(input))
+      : this.mutate("publishState", { twinId, ...asRecord(input) });
+  }
   addDataset(twinId: string, input: unknown) { return this.mutate("addDataset", { twinId, ...asRecord(input) }); }
   addAspect(twinId: string, input: unknown) { return this.mutate("addTwinAspect", { twinId, ...asRecord(input) }); }
   addInterface(twinId: string, input: unknown) { return this.mutate("addTwinInterface", { twinId, ...asRecord(input) }); }
