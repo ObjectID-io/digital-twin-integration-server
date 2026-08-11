@@ -17,7 +17,7 @@ objectid:
     creditPolicyCredential: DTIS_OID_CREDIT_POLICY_ID
     creditTokenCredential: DTIS_OID_CREDIT_TOKEN_ID
     clockId: "0x6"
-    gasBudget: 10000000
+    gasBudget: 100000000
 
 profiles:
   directory: /profiles

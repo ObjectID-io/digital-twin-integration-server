@@ -34,6 +34,9 @@ export function errorBody(error: unknown) {
 
 export function mapObjectIdError(error: unknown): AppError {
   const message = error instanceof Error ? error.message : String(error);
+  if (/insufficient gas/i.test(message)) {
+    return new AppError("IOTA_INSUFFICIENT_GAS", message, 503, "OBJECTID", { retryable: false });
+  }
   if (/credit|balance|insufficient/i.test(message)) {
     return new AppError("OBJECTID_INSUFFICIENT_CREDIT", message, 402, "CREDIT");
   }

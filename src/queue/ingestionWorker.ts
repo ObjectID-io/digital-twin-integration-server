@@ -114,7 +114,7 @@ export class IngestionWorker {
   private fail(job: IngestionJob, error: AppError) {
     this.failedJobs.push({ job, error });
     queueJobsFailed.inc({ type: job.type, reason: error.code });
-    logger.error({ jobId: job.id, type: job.type, code: error.code }, "ingestion_job_failed");
+    logger.error({ jobId: job.id, type: job.type, code: error.code, error: error.message, details: error.details }, "ingestion_job_failed");
   }
 }
 

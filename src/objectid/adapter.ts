@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { getFullnodeUrl, IotaClient } from "@iota/iota-sdk/client";
 import { AppError, mapObjectIdError } from "../common/errors.js";
 import type { AppConfig } from "../config/types.js";
 import type { CredentialProvider } from "../security/credentials.js";
@@ -19,9 +20,13 @@ function objectIdOf(value: any) {
 export class ProviderObjectIdAdapter implements ObjectIdAdapter {
   private readonly oid: any;
   private readonly statePublisher?: IotaStatePublisher;
+  private readonly rpcClient: IotaClient;
 
-  constructor(private readonly config: AppConfig, oid: any = createOid(), credentials?: CredentialProvider) {
+  constructor(private readonly config: AppConfig, oid: any = createOid(), credentials?: CredentialProvider, rpcClient?: IotaClient) {
     this.oid = oid;
+    this.rpcClient = rpcClient ?? new IotaClient({
+      url: config.objectid.rpcUrl || getFullnodeUrl(config.objectid.network as "mainnet" | "testnet" | "devnet" | "localnet"),
+    });
     if (config.objectid.signer?.enabled) {
       if (!credentials) throw new AppError("OBJECTID_SIGNER_CREDENTIALS_REQUIRED", "The IOTA signer requires a credential provider", 503, "AUTHORIZATION");
       this.statePublisher = new IotaStatePublisher(config.objectid, credentials);
@@ -76,7 +81,16 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
 
   async getTwinEvents(twinId: string): Promise<TwinEvent[]> {
     const objects = await this.getTwinChildren(twinId, "OIDTwinEvent");
-    return objects.map((raw: any) => eventOf(raw));
+    return Promise.all(objects.map(async (raw: any) => {
+      const event = eventOf(raw);
+      if (!event.transactionDigest && event.eventId) {
+        try {
+          const object = await this.rpcClient.getObject({ id: event.eventId, options: { showPreviousTransaction: true } });
+          event.transactionDigest = object.data?.previousTransaction ?? undefined;
+        } catch { /* Event data remains usable when transaction metadata is temporarily unavailable. */ }
+      }
+      return event;
+    }));
   }
 
   async getDigitalThread(twinId: string) {

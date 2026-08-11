@@ -24,7 +24,7 @@ function objectidConfig(): AppConfig["objectid"] {
       creditPolicyCredential: "POLICY",
       creditTokenCredential: "CREDIT",
       clockId: "0x6",
-      gasBudget: 10_000_000,
+      gasBudget: 100_000_000,
     },
   };
 }
