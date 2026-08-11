@@ -16,14 +16,16 @@ The supplied Backblaze application key is kept only in the ignored local credent
 
 ```bash
 cp .env.vps.example .env
-chmod 600 .env secrets/credentials.json secrets/mqtt_password.txt secrets/sim_control_password.txt
+chmod 700 secrets
+chmod 600 .env
+chmod 644 secrets/credentials.json secrets/mqtt_password.txt secrets/sim_control_password.txt
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 curl --fail http://127.0.0.1:8080/ready
 ```
 
-The simulator entrypoint uses only `CHOWN`, `SETGID` and `SETUID` capabilities to read root-owned Compose secrets, copy them into its private in-memory `tmpfs`, and drop privileges before starting Node.js. Keep the host-side secret files at mode `0600`.
+Docker Compose implements local file-backed secrets as bind mounts and does not remap their host permissions. Keep the `secrets` directory at mode `0700` and its mounted files at `0644`; the private parent directory protects them on the VPS while allowing the non-root container processes to read the mounts. The simulator runs without Linux capabilities on a read-only filesystem.
 
 Publish a state sample from the VPS:
 
