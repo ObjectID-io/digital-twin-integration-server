@@ -17,6 +17,8 @@ const config = {
   graphqlUrl: process.env.IOTA_GRAPHQL_URL ?? "https://graphql.testnet.iota.cafe/",
   authAudience: process.env.DID_AUTH_AUDIENCE ?? "dt-demo.objectid.io",
   packageId: process.env.IOTA_PACKAGE_ID ?? "",
+  creditPackageId: process.env.IOTA_CREDIT_PACKAGE_ID ?? "",
+  identityPackageId: process.env.IOTA_IDENTITY_PACKAGE_ID ?? "",
   mqttUrl: process.env.MQTT_URL ?? "mqtt://mosquitto:1883",
   mqttTopic: process.env.MQTT_TOPIC ?? "objectid/twins/telemetry/dataset",
   mqttUsername: process.env.MQTT_USERNAME ?? "objectid",
@@ -27,6 +29,7 @@ if (!config.twinId) throw new Error("TWIN_ID is required");
 
 const credentials = JSON.parse(await readFile(config.credentialsFile, "utf8"));
 const apiKey = String(credentials.DTIS_API_KEY ?? "");
+const creditPolicyId = String(credentials.DTIS_OID_CREDIT_POLICY_ID ?? "");
 if (!apiKey) throw new Error("DTIS_API_KEY is missing from the credentials file");
 
 const mqttPassword = (await readFile(config.mqttPasswordFile, "utf8")).trimEnd();
@@ -110,6 +113,52 @@ app.get("/api/my/twins", (request, response) => {
   const session = requestSession(request);
   if (!session) return response.status(401).json({ error: "DID login required" });
   response.set("Cache-Control", "no-store").json(session.twins);
+});
+app.post("/api/my/twins/refresh", async (request, response, next) => {
+  try {
+    const token = cookieValue(request, "oid_dt_session");
+    response.set("Cache-Control", "no-store").json(await didAuth.refresh(token, listTwinsForDid));
+  } catch (error) { next(error); }
+});
+app.post("/api/my/twins/forget", (request, response, next) => {
+  try {
+    const twinId = String(request.body?.twinId ?? "");
+    if (!/^0x[0-9a-f]{64}$/i.test(twinId)) return response.status(400).json({ error: "A valid Twin object ID is required" });
+    response.set("Cache-Control", "no-store").json(didAuth.forgetTwin(cookieValue(request, "oid_dt_session"), twinId));
+  } catch (error) { next(error); }
+});
+app.post("/api/my/twins/remember", async (request, response, next) => {
+  try {
+    const sessionToken = cookieValue(request, "oid_dt_session");
+    const session = didAuth.session(sessionToken);
+    if (!session) return response.status(401).json({ error: "DID login required" });
+    const twinId = String(request.body?.twinId ?? "");
+    if (!/^0x[0-9a-f]{64}$/i.test(twinId)) return response.status(400).json({ error: "A valid Twin object ID is required" });
+    const twin = await chain.twinSummaryForDid(twinId, session.did);
+    if (!twin) return response.status(403).json({ error: "The on-chain Twin is not associated with this DID" });
+    response.set("Cache-Control", "no-store").json(didAuth.rememberTwin(sessionToken, twin));
+  } catch (error) { next(error); }
+});
+app.get("/api/my/mutation-context", async (request, response, next) => {
+  try {
+    const session = requestSession(request);
+    if (!session) return response.status(401).json({ error: "DID login required" });
+    if (!config.creditPackageId || !config.identityPackageId || !creditPolicyId) throw new Error("ObjectID mutation configuration is incomplete");
+    const owned = await chain.ownedObjects(session.address);
+    const controllerCap = owned.find((item) => {
+      const type = objectType(item);
+      return type === `${config.identityPackageId}::oid_identity::ControllerCap` && String(objectFields(item).controller_of ?? "").toLowerCase() === didObjectId(session.did);
+    });
+    const creditType = `0x2::token::Token<${config.creditPackageId}::oid_credit::OID_CREDIT>`;
+    const creditTokens = owned.filter((item) => objectType(item) === creditType).map((item) => ({
+      objectId: String(item.data?.objectId ?? ""), balance: String(objectFields(item).balance ?? "0"),
+    }));
+    if (!controllerCap) return response.status(409).json({ error: "The DID ControllerCap is no longer owned by this signer" });
+    response.set("Cache-Control", "no-store").json({
+      packageId: config.packageId, creditPackageId: config.creditPackageId, creditPolicyId,
+      identityPackageId: config.identityPackageId, controllerCapId: controllerCap.data.objectId, creditTokens, clockId: "0x6", network: config.network,
+    });
+  } catch (error) { next(error); }
 });
 app.get("/api/live", (request, response) => {
   response.set({
@@ -222,6 +271,10 @@ function cookieValue(request, name) {
 function sessionCookie(token, maxAge = 1800) {
   return `oid_dt_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
 }
+
+function objectType(value) { return String(value?.data?.type ?? value?.data?.content?.type ?? ""); }
+function objectFields(value) { return value?.data?.content?.dataType === "moveObject" ? value.data.content.fields : {}; }
+function didObjectId(did) { return String(did).slice(String(did).lastIndexOf(":") + 1).toLowerCase(); }
 
 function broadcast(event, payload) {
   const message = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;

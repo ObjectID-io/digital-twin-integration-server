@@ -49,6 +49,28 @@
 
 .open-twin-picker:hover { background: #d5ff5212; }
 
+.twin-workspace-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border-left: 1px solid var(--line);
+}
+
+.twin-workspace-actions button {
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: #d5ff5208;
+  color: var(--acid);
+  padding: 0 12px;
+  cursor: pointer;
+  font: 8px "IBM Plex Mono";
+  letter-spacing: .08em;
+}
+
+.twin-workspace-actions button:last-child { border-right: 0; }
+.twin-workspace-actions button:hover { background: #d5ff5215; }
+.twin-workspace-actions button.danger { color: var(--red); background: #ff6b5f08; }
+
 .twin-picker-dialog {
   width: min(920px, 100%);
   max-height: min(780px, calc(100vh - 40px));
@@ -157,11 +179,72 @@
 .no-personal-twins b { color: var(--amber); font: 9px "IBM Plex Mono"; }
 .no-personal-twins span { color: var(--muted); font-size: 12px; }
 
+.mutation-dialog {
+  width: min(900px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  border: 1px solid var(--mint);
+  background: linear-gradient(145deg, #10241f, #07110f 70%);
+  box-shadow: 0 30px 100px #000;
+  position: relative;
+  padding: 45px;
+}
+
+.mutation-dialog.danger { border-color: var(--red); }
+.mutation-dialog .dialog-close { position: absolute; right: 18px; top: 16px; border: 0; background: transparent; color: var(--muted); font-size: 25px; cursor: pointer; }
+.mutation-dialog h2 { font-size: 45px; line-height: 1; margin: 18px 0; }
+.mutation-dialog > p { color: #9db3ad; line-height: 1.65; }
+
+.twin-mutation-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-top: 28px;
+}
+
+.twin-mutation-form label,
+.delete-confirm-form label { display: grid; gap: 7px; }
+.twin-mutation-form label > span,
+.delete-confirm-form label > span { color: var(--mint); font: 8px "IBM Plex Mono"; letter-spacing: .12em; }
+.twin-mutation-form input,
+.twin-mutation-form select,
+.twin-mutation-form textarea,
+.delete-confirm-form input { width: 100%; border: 1px solid var(--line); background: #030a08; color: var(--text); padding: 12px; font: 11px "IBM Plex Mono"; outline: none; }
+.twin-mutation-form textarea { min-height: 72px; resize: vertical; }
+.twin-mutation-form input:focus,
+.twin-mutation-form select:focus,
+.twin-mutation-form textarea:focus,
+.delete-confirm-form input:focus { border-color: var(--acid); }
+.twin-mutation-form .wide { grid-column: 1 / -1; }
+.mutation-cost { border-left: 2px solid var(--acid); background: #d5ff5208; padding: 12px 15px; display: grid; gap: 5px; }
+.mutation-cost b { color: var(--acid); font: 8px "IBM Plex Mono"; }
+.mutation-cost span { color: var(--muted); font-size: 11px; }
+.credit-warning { border-left: 2px solid var(--amber); background: #ffb84d0a; padding: 12px 15px; display: grid; gap: 5px; }
+.credit-warning b { color: var(--amber); font: 8px "IBM Plex Mono"; }
+.credit-warning span { color: #c5b28f; font-size: 11px; line-height: 1.5; }
+.mutation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mutation-actions button { border: 1px solid var(--line); background: transparent; color: var(--muted); padding: 14px; cursor: pointer; font: 9px "IBM Plex Mono"; letter-spacing: .1em; }
+.mutation-actions button[type="submit"] { border-color: var(--acid); color: var(--acid); background: #d5ff5208; }
+.mutation-actions button.danger { border-color: var(--red); color: var(--red); background: #ff6b5f0a; }
+.mutation-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.delete-twin-summary { border: 1px solid var(--line); margin: 25px 0; padding: 20px; display: grid; grid-template-columns: 150px 1fr; gap: 10px; }
+.delete-twin-summary span { color: var(--muted); font: 8px "IBM Plex Mono"; letter-spacing: .1em; }
+.delete-twin-summary code { grid-column: 2; color: var(--muted); font: 9px "IBM Plex Mono"; overflow-wrap: anywhere; }
+.delete-confirm-form { display: grid; gap: 16px; }
+.transaction-notice { margin-top: 18px; border: 1px solid var(--mint); background: #79f2bd0b; padding: 13px 18px; display: grid; grid-template-columns: 1fr auto auto; gap: 20px; align-items: center; }
+.transaction-notice div { display: grid; gap: 4px; }
+.transaction-notice b { color: var(--mint); font: 9px "IBM Plex Mono"; }
+.transaction-notice span { color: var(--muted); font-size: 11px; }
+.transaction-notice a { color: var(--acid); text-decoration: none; font: 9px "IBM Plex Mono"; }
+.transaction-notice > button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 18px; }
+
 @media (max-width: 900px) {
   .identity-console { grid-template-columns: 1fr 190px; }
   .identity-principal { grid-column: 1 / -1; }
   .selected-twin-summary { border-right: 1px solid var(--line); }
   .twin-choice-list { grid-template-columns: 1fr; }
+  .identity-console { grid-template-columns: 1fr; }
+  .twin-workspace-actions { min-height: 54px; border-left: 0; border-top: 1px solid var(--line); }
 }
 
 @media (max-width: 720px) {
@@ -171,4 +254,12 @@
   .open-twin-picker { min-height: 52px; border-left: 0; }
   .twin-picker-dialog { padding: 40px 22px 24px; }
   .twin-picker-dialog > h2 { font-size: 36px; }
+  .mutation-dialog { padding: 40px 22px 24px; }
+  .mutation-dialog h2 { font-size: 35px; }
+  .twin-mutation-form { grid-template-columns: 1fr; }
+  .twin-mutation-form .wide { grid-column: auto; }
+  .delete-twin-summary { grid-template-columns: 1fr; }
+  .delete-twin-summary code { grid-column: 1; }
+  .transaction-notice { grid-template-columns: 1fr auto; }
+  .transaction-notice a { grid-row: 2; }
 }

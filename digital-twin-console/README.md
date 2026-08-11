@@ -6,6 +6,8 @@ The Node gateway serves the React application, subscribes to MQTT telemetry, exp
 
 The console starts in public demo mode. A user can optionally enter an IOTA DID and its seed: the seed signs a one-time personal-message challenge locally in the browser and is immediately discarded. The gateway verifies the signature and confirms on IOTA that the signer address owns the DID `ControllerCap`; the seed is never transmitted. The resulting `HttpOnly`, `Secure`, `SameSite=Strict` session exposes the OIDTwins where the DID is owner, creator, steward or Twin identity.
 
+During the active browser login, the in-memory signer can create a new OIDTwin or delete a selected Twin for which the DID is owner or steward. Transactions are built and signed in the browser; every operation consumes one compatible OID Credit and is confirmed on IOTA before the local list changes. The published Twin package is statically bound to the configured Identity and OID Credit package versions, so caps or credits from other ObjectID package versions are deliberately ignored.
+
 Authenticated discovery does not depend exclusively on the integration server. If that backend is unavailable, the gateway uses IOTA GraphQL for object discovery and IOTA RPC for the OIDTwin root, identifiers and Digital Thread events. The interface clearly switches to `CHAIN ONLY` and hides off-chain telemetry, readiness and verifier reports instead of presenting stale or unrelated data.
 
 The assurance view is a deterministic technical self-assessment. It does not claim formal ISO certification or clause-by-clause conformity.

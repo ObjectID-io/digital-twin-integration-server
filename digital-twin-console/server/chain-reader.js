@@ -11,18 +11,11 @@ export class ChainReader {
   async listTwinsByDid(did) {
     const addresses = await this.addressesByType(`${this.packageId}::oid_twin::OIDTwin`);
     const objects = await mapLimited(addresses, 8, (id) => this.object(id));
-    return objects.flatMap((raw) => {
-      const fields = fieldsOf(raw);
-      const roles = [
-        ["owner", fields.owner_did], ["creator", fields.creator_did],
-        ["steward", fields.steward_did], ["twin", fields.twin_did],
-      ].filter(([, value]) => String(value ?? "").trim() === did).map(([role]) => role);
-      return roles.length ? [{
-        twinId: raw.data.objectId,
-        name: String(fields.name ?? ""), description: String(fields.description ?? ""),
-        lifecycleState: optionalNumber(fields.lifecycle_state), revision: optionalNumber(fields.revision), roles,
-      }] : [];
-    });
+    return objects.flatMap((raw) => summaryForDid(raw, did) ?? []);
+  }
+
+  async twinSummaryForDid(twinId, did) {
+    return summaryForDid(await this.object(twinId), did);
   }
 
   async dashboard(twinId) {
@@ -52,6 +45,17 @@ export class ChainReader {
     const response = await this.client.getObject({ id, options: { showContent: true, showType: true, showPreviousTransaction: true } });
     if (!response.data || response.error) throw new Error(`IOTA object ${id} is unavailable`);
     return response;
+  }
+
+  async ownedObjects(owner) {
+    const objects = [];
+    let cursor;
+    do {
+      const page = await this.client.getOwnedObjects({ owner, cursor, limit: 50, options: { showType: true, showContent: true } });
+      objects.push(...page.data);
+      cursor = page.hasNextPage ? page.nextCursor : undefined;
+    } while (cursor);
+    return objects;
   }
 
   async addressesByType(type, owner) {
@@ -118,3 +122,15 @@ async function mapLimited(values, limit, mapper) {
 
 function optionalNumber(value) { const number = Number(value); return value === undefined || !Number.isFinite(number) ? undefined : number; }
 function isObjectId(value) { return /^0x[0-9a-f]{64}$/i.test(value); }
+
+function summaryForDid(raw, did) {
+  const fields = fieldsOf(raw);
+  const roles = [
+    ["owner", fields.owner_did], ["creator", fields.creator_did],
+    ["steward", fields.steward_did], ["twin", fields.twin_did],
+  ].filter(([, value]) => String(value ?? "").trim() === did).map(([role]) => role);
+  return roles.length ? {
+    twinId: raw.data.objectId, name: String(fields.name ?? ""), description: String(fields.description ?? ""),
+    lifecycleState: optionalNumber(fields.lifecycle_state), revision: optionalNumber(fields.revision), roles,
+  } : null;
+}

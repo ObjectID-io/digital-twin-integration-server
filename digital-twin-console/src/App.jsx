@@ -4,6 +4,7 @@ import { fieldsOf, LIFECYCLE, qualityScore, runQualityChecks, textOf } from "./q
 import { eventLabel, isIotaObjectId, objectExplorerUrl, transactionExplorerUrl } from "./thread-ui.js";
 import { validateAuditEvidence } from "./audit-validation.js";
 import "./auth.css";
+import { buildCreateTwinTransaction, buildDeleteTwinTransaction, createdTwinId, executeTwinTransaction, usableCreditTokens } from "./twin-mutations.js";
 
 const STANDARD_ROWS = [
   { ref: "ISO/IEC 30188:2026", area: "Reference architecture", evidence: "Autonomous OIDTwin root with identity, lifecycle, data, model, interface and governance views", status: "Aligned", url: "https://www.iso.org/standard/53308.html" },
@@ -45,6 +46,9 @@ export function App() {
   const [selectedTwinId, setSelectedTwinId] = useState("");
   const [loginOpen, setLoginOpen] = useState(false);
   const [twinPickerOpen, setTwinPickerOpen] = useState(false);
+  const [mutationMode, setMutationMode] = useState(null);
+  const [transactionNotice, setTransactionNotice] = useState(null);
+  const signerRef = useRef(null);
 
   useEffect(() => {
     fetch("/api/auth/session", { cache: "no-store" })
@@ -86,6 +90,7 @@ export function App() {
     await fetch("/api/auth/logout", { method: "POST" });
     setSession(null);
     setSelectedTwinId("");
+    signerRef.current = null;
   }
 
   const twinResult = dashboard?.twin;
@@ -119,7 +124,7 @@ export function App() {
         </div>
       </header>
 
-      {session && <TwinSelector session={session} selectedTwinId={selectedTwinId} onOpen={() => setTwinPickerOpen(true)} />}
+      {session && <TwinSelector session={session} selectedTwinId={selectedTwinId} signingEnabled={Boolean(signerRef.current)} onOpen={() => setTwinPickerOpen(true)} onCreate={() => setMutationMode("create")} onDelete={() => setMutationMode("delete")} onEnableSigning={() => setLoginOpen(true)} />}
 
       <nav className="tabs" aria-label="Console sections">
         {[['overview','Operational view'],['assurance','Quality assurance'],['thread','Digital thread'],['standards','Standards map']].map(([id,label]) => (
@@ -129,10 +134,13 @@ export function App() {
 
       {error && <div className="alert"><b>UPSTREAM DEGRADED</b><span>{error}</span></div>}
       {dashboard?.meta?.dataSource === "chain-only" && <div className="chain-notice"><b>CHAIN-ONLY VIEW</b><span>The integration backend is unavailable or incomplete. Only evidence resolved directly from IOTA is shown; off-chain data is intentionally hidden.</span></div>}
+      {transactionNotice && <div className="transaction-notice"><div><b>{transactionNotice.title}</b><span>{transactionNotice.message}</span></div><a href={transactionExplorerUrl(transactionNotice.digest, dashboard?.meta?.network ?? "testnet")} target="_blank" rel="noreferrer">VIEW TRANSACTION ↗</a><button type="button" onClick={() => setTransactionNotice(null)}>×</button></div>}
       {latest?.simulationScenario && latest.simulationScenario !== "normal" && <div className="simulation-alert"><div><small>SIMULATED CNC FAULT</small><strong>{latest.simulationScenario.replaceAll("-", " ")}</strong></div><p>{SIMULATION_FAULTS[latest.simulationScenario] || "Injected simulator condition"}</p><span>{latest.operatingState?.toUpperCase() || "ALARM"}</span></div>}
       {loading && <Loading />}
-      {loginOpen && <DidLoginDialog onClose={() => setLoginOpen(false)} onAuthenticated={(value) => { setSession(value); setLoginOpen(false); setTwinPickerOpen(true); }} />}
+      {loginOpen && <DidLoginDialog onClose={() => setLoginOpen(false)} onAuthenticated={(value, keypair) => { signerRef.current = keypair; setSession(value); setLoginOpen(false); setTwinPickerOpen(true); }} />}
       {session && twinPickerOpen && <TwinPicker session={session} selectedTwinId={selectedTwinId} onClose={() => setTwinPickerOpen(false)} onSelect={(twinId) => { setSelectedTwinId(twinId); setTwinPickerOpen(false); }} />}
+      {session && mutationMode === "create" && <CreateTwinDialog session={session} keypair={signerRef.current} onClose={() => setMutationMode(null)} onComplete={async ({ digest, twinId: createdId, name }) => { setMutationMode(null); setTransactionNotice({ title: "DIGITAL TWIN CREATED", message: `${name} is confirmed on IOTA.`, digest }); if (createdId) { const remembered = await fetch("/api/my/twins/remember", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ twinId: createdId }) }).then(async (response) => response.ok ? response.json() : null).catch(() => null); if (remembered) setSession(remembered); else setSession((current) => ({ ...current, twins: [...current.twins, { twinId: createdId, name, description: "", revision: 1, roles: ["owner", "creator", "steward"] }] })); setSelectedTwinId(createdId); } }} />}
+      {session && mutationMode === "delete" && <DeleteTwinDialog twin={session.twins.find((item) => item.twinId === selectedTwinId)} network={dashboard?.meta?.network ?? "testnet"} keypair={signerRef.current} onClose={() => setMutationMode(null)} onComplete={async ({ digest, twinId: deletedId, name }) => { setMutationMode(null); setTransactionNotice({ title: "DIGITAL TWIN DELETED", message: `${name} was deleted on IOTA.`, digest }); setSession((current) => ({ ...current, twins: current.twins.filter((twin) => twin.twinId !== deletedId) })); setSelectedTwinId(""); await fetch("/api/my/twins/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ twinId: deletedId }) }).catch(() => undefined); }} />}
 
       {!loading && tab === "overview" && (
         <section className="view overview-view">
@@ -202,12 +210,13 @@ export function App() {
   );
 }
 
-function TwinSelector({ session, selectedTwinId, onOpen }) {
+function TwinSelector({ session, selectedTwinId, signingEnabled, onOpen, onCreate, onDelete, onEnableSigning }) {
   const selected = session.twins.find((twin) => twin.twinId === selectedTwinId);
+  const canDelete = selected?.roles?.some((role) => role === "owner" || role === "steward");
   return <section className="identity-console" aria-label="Authenticated DID Twins">
     <div className="identity-principal"><span>SIGNED IN WITH DID</span><strong title={session.did}>{shortId(session.did)}</strong><small>Signer {shortId(session.address)}</small></div>
     <div className="selected-twin-summary"><span>CURRENT VIEW</span><strong>{selected?.name || "Public Demo Twin"}</strong><small>{selected ? `Your relationship: ${roleLabels(selected.roles).join(", ")} · Revision ${selected.revision ?? "—"}` : "Public example · No ownership implied"}</small></div>
-    <button className="open-twin-picker" type="button" onClick={onOpen}>SELECT DIGITAL TWIN <span>↗</span></button>
+    <div className="twin-workspace-actions"><button type="button" onClick={onOpen}>SELECT TWIN</button>{signingEnabled ? <><button type="button" onClick={onCreate}>CREATE</button>{canDelete && <button className="danger" type="button" onClick={onDelete}>DELETE</button>}</> : <button type="button" onClick={onEnableSigning}>ENABLE SIGNING</button>}</div>
   </section>;
 }
 
@@ -276,7 +285,7 @@ function DidLoginDialog({ onClose, onAuthenticated }) {
       });
       const session = await verifyResponse.json();
       if (!verifyResponse.ok) throw new Error(session.error || "DID authentication failed");
-      onAuthenticated(session);
+      onAuthenticated(session, keypair);
     } catch (cause) {
       setSeed("");
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -298,6 +307,107 @@ function DidLoginDialog({ onClose, onAuthenticated }) {
       <small className="login-security">Session: HttpOnly / SameSite Strict / 30 minutes</small>
     </section>
   </div>;
+}
+
+function CreateTwinDialog({ session, keypair, onClose, onComplete }) {
+  const [context, setContext] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    name: "", description: "", namespace: "objectid", twinType: "machine", targetKind: "physical-asset",
+    targetObjectId: "", targetDid: "", lifecycleState: "1", fidelityLevel: "1", maturityLevel: "1",
+    immutableMetadata: "{}", mutableMetadata: "{}", creditTokenId: "",
+  });
+  useEffect(() => {
+    fetch("/api/my/mutation-context", { cache: "no-store" }).then(async (response) => {
+      const value = await response.json();
+      if (!response.ok) throw new Error(value.error || "Unable to load transaction objects");
+      const credits = usableCreditTokens(value);
+      setContext(value);
+      setForm((current) => ({ ...current, creditTokenId: credits[0]?.objectId ?? "" }));
+    }).catch((cause) => setError(cause.message));
+  }, []);
+  const credits = usableCreditTokens(context);
+  const update = (name) => (event) => setForm((current) => ({ ...current, [name]: event.target.value }));
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      if (!keypair) throw new Error("Signing is not enabled. Log in again with DID and seed.");
+      if (!context || !form.creditTokenId) throw new Error("An OID Credit token with positive balance is required.");
+      JSON.parse(form.immutableMetadata); JSON.parse(form.mutableMetadata);
+      const transaction = buildCreateTwinTransaction(context, form);
+      const result = await executeTwinTransaction({ keypair, network: context.network, transaction });
+      await onComplete({ digest: result.digest, twinId: createdTwinId(result, context.packageId), name: form.name });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  }
+
+  return <MutationDialog title="Create a Digital Twin" eyebrow="ON-CHAIN MUTATION / 1 OID CREDIT" onClose={onClose} busy={busy}>
+    <p>The new OIDTwin will be created on IOTA. Your authenticated DID becomes creator, owner and steward.</p>
+    <form className="twin-mutation-form" onSubmit={submit}>
+      <label><span>NAME *</span><input value={form.name} onChange={update("name")} placeholder="Five-axis CNC" required /></label>
+      <label><span>NAMESPACE *</span><input value={form.namespace} onChange={update("namespace")} placeholder="objectid" required /></label>
+      <label className="wide"><span>DESCRIPTION</span><textarea value={form.description} onChange={update("description")} placeholder="Operational Digital Twin description" /></label>
+      <label><span>TWIN TYPE *</span><input value={form.twinType} onChange={update("twinType")} required /></label>
+      <label><span>TARGET KIND *</span><input value={form.targetKind} onChange={update("targetKind")} required /></label>
+      <label className="wide"><span>TARGET DID</span><input value={form.targetDid} onChange={update("targetDid")} placeholder="Optional DID of the represented asset" /></label>
+      <label className="wide"><span>TARGET OBJECT ID</span><input value={form.targetObjectId} onChange={update("targetObjectId")} placeholder="Optional 0x… IOTA object" /></label>
+      <label><span>LIFECYCLE</span><select value={form.lifecycleState} onChange={update("lifecycleState")}>{[[1,"Design"],[2,"Development"],[3,"Commissioning"],[4,"Production"],[5,"Deployment"],[6,"Operation"],[7,"Maintenance"],[8,"Decommissioning"],[9,"Retired"],[10,"Archived"]].map(([value,label])=><option value={value} key={value}>{value} · {label}</option>)}</select></label>
+      <label><span>FIDELITY LEVEL</span><input type="number" min="0" max="255" value={form.fidelityLevel} onChange={update("fidelityLevel")} /></label>
+      <label><span>MATURITY LEVEL</span><input type="number" min="0" max="255" value={form.maturityLevel} onChange={update("maturityLevel")} /></label>
+      <label><span>OID CREDIT TOKEN</span><select value={form.creditTokenId} onChange={update("creditTokenId")} disabled={!credits.length}><option value="">{credits.length ? "Select credit token" : "No spendable credits"}</option>{credits.map((token)=><option value={token.objectId} key={token.objectId}>{shortId(token.objectId)} · balance {token.balance}</option>)}</select></label>
+      {context && !credits.length && <div className="credit-warning wide"><b>OID CREDIT REQUIRED</b><span>The published Twin package requires credits from package {shortId(context.creditPackageId)}. {context.creditTokens.length ? `The compatible token balance is ${context.creditTokens.map((token) => token.balance).join(", ")}.` : "No compatible token is owned by this signer."}</span></div>}
+      <label className="wide"><span>IMMUTABLE METADATA / JSON</span><textarea value={form.immutableMetadata} onChange={update("immutableMetadata")} /></label>
+      <label className="wide"><span>MUTABLE METADATA / JSON</span><textarea value={form.mutableMetadata} onChange={update("mutableMetadata")} /></label>
+      {context && <div className="mutation-cost wide"><b>TRANSACTION AUTHORITY</b><span>{shortId(session.did)} · 1 OID Credit · gas paid by {shortId(session.address)}</span></div>}
+      {error && <div className="login-error wide">{error}</div>}
+      <div className="mutation-actions wide"><button type="button" onClick={onClose} disabled={busy}>CANCEL</button><button type="submit" disabled={busy || !context || !credits.length}>{busy ? "SIGNING & CONFIRMING…" : "CREATE ON IOTA"}</button></div>
+    </form>
+  </MutationDialog>;
+}
+
+function DeleteTwinDialog({ twin, network, keypair, onClose, onComplete }) {
+  const [context, setContext] = useState(null);
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    fetch("/api/my/mutation-context", { cache: "no-store" }).then(async (response) => {
+      const value = await response.json();
+      if (!response.ok) throw new Error(value.error || "Unable to load transaction objects");
+      setContext(value);
+    }).catch((cause) => setError(cause.message));
+  }, []);
+  const credit = usableCreditTokens(context)[0];
+  const expected = twin?.name || twin?.twinId || "";
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true); setError("");
+    try {
+      if (!twin) throw new Error("No personal Digital Twin is selected.");
+      if (!keypair) throw new Error("Signing is not enabled. Log in again with DID and seed.");
+      if (confirmation !== expected) throw new Error("Confirmation does not match the Twin name.");
+      if (!context || !credit) throw new Error("An OID Credit token with positive balance is required.");
+      const transaction = buildDeleteTwinTransaction(context, twin.twinId, credit.objectId);
+      const result = await executeTwinTransaction({ keypair, network, transaction });
+      await onComplete({ digest: result.digest, twinId: twin.twinId, name: expected });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  }
+
+  return <MutationDialog title="Delete this Digital Twin?" eyebrow="DESTRUCTIVE ON-CHAIN MUTATION / 1 OID CREDIT" onClose={onClose} busy={busy} danger>
+    <p>This consumes the shared OIDTwin object on IOTA and cannot be undone. Existing historical chain evidence is not rewritten.</p>
+    <div className="delete-twin-summary"><span>TWIN</span><strong>{expected}</strong><code>{twin?.twinId}</code><span>YOUR AUTHORITY</span><strong>{roleLabels(twin?.roles).join(", ")}</strong></div>
+    <form className="delete-confirm-form" onSubmit={submit}><label><span>TYPE “{expected}” TO CONFIRM</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label>{context && !credit && <div className="credit-warning"><b>OID CREDIT REQUIRED</b><span>The compatible token has no spendable balance. Deletion cannot be submitted.</span></div>}{error && <div className="login-error">{error}</div>}<div className="mutation-actions"><button type="button" onClick={onClose} disabled={busy}>KEEP TWIN</button><button className="danger" type="submit" disabled={busy || confirmation !== expected || !credit}>{busy ? "DELETING…" : "DELETE ON IOTA"}</button></div></form>
+  </MutationDialog>;
+}
+
+function MutationDialog({ title, eyebrow, onClose, busy, danger = false, children }) {
+  return <div className="login-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}><section className={`mutation-dialog ${danger ? "danger" : ""}`} role="dialog" aria-modal="true"><button className="dialog-close" type="button" onClick={onClose} disabled={busy}>×</button><span className="eyebrow">{eyebrow}</span><h2>{title}</h2>{children}</section></div>;
 }
 
 function Assurance({ checks, score, verification, readiness, twinId, network }) {

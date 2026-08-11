@@ -65,6 +65,8 @@ docker compose logs -f digital-twin-console
 
 When the integration server cannot supply a logged-in user's Twin data, the console automatically enters `CHAIN ONLY` mode and resolves the Twin root, identifiers and Digital Thread events from testnet RPC/GraphQL. Off-chain sections remain empty by design. Rebuild the console image when deploying this feature because both browser and gateway dependencies changed.
 
+Authenticated users can also create and delete OIDTwins directly from the console. The compose values `IOTA_PACKAGE_ID`, `IOTA_CREDIT_PACKAGE_ID` and `IOTA_IDENTITY_PACKAGE_ID` must match the dependencies of the published Move package. The shared policy object is read from `DTIS_OID_CREDIT_POLICY_ID` in `secrets/credentials.json`; user ControllerCaps and credit tokens are discovered from the authenticated signer address and are never taken from the server signer configuration.
+
 The console presents a technical self-assessment and does not claim formal ISO certification.
 
 ## Backblaze check

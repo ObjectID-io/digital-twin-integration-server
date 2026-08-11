@@ -22,6 +22,10 @@ test("authenticates a DID with a one-time personal-message signature", async () 
   assert.equal(controllerCheck.address, keypair.toIotaAddress());
   assert.equal(result.session.twins[0].roles[0], "owner");
   assert.equal(auth.session(result.token).did, did);
+  const refreshed = await auth.refresh(result.token, async () => [{ twinId: `0x${"c".repeat(64)}`, roles: ["creator"] }]);
+  assert.equal(refreshed.twins[0].roles[0], "creator");
+  assert.equal(auth.forgetTwin(result.token, refreshed.twins[0].twinId).twins.length, 0);
+  assert.equal(auth.rememberTwin(result.token, refreshed.twins[0]).twins.length, 1);
   await assert.rejects(() => auth.verify({ challengeId: challenge.challengeId, did, signature: signed.signature }, async () => []), /invalid or expired/);
 });
 

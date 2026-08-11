@@ -66,6 +66,30 @@ export class DidAuthService {
     return session ? publicSession(session) : null;
   }
 
+  async refresh(token, resolveTwins) {
+    this.prune();
+    const session = this.sessions.get(String(token ?? ""));
+    if (!session) throw authError("DID login required");
+    session.twins = await resolveTwins(session.did);
+    return publicSession(session);
+  }
+
+  forgetTwin(token, twinId) {
+    this.prune();
+    const session = this.sessions.get(String(token ?? ""));
+    if (!session) throw authError("DID login required");
+    session.twins = session.twins.filter((twin) => twin.twinId !== twinId);
+    return publicSession(session);
+  }
+
+  rememberTwin(token, twin) {
+    this.prune();
+    const session = this.sessions.get(String(token ?? ""));
+    if (!session) throw authError("DID login required");
+    session.twins = [...session.twins.filter((item) => item.twinId !== twin.twinId), twin];
+    return publicSession(session);
+  }
+
   destroy(token) { this.sessions.delete(String(token ?? "")); }
 
   prune() {
