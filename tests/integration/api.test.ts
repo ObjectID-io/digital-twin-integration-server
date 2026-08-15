@@ -30,6 +30,28 @@ describe("HTTP integration", () => {
     expect((await request(app).get("/openapi.json")).body.openapi).toBe("3.0.3");
   });
 
+  it("exposes authenticated realtime capabilities and the latest connector payload", async () => {
+    const runtime = createApp(testConfig(), adapter);
+    const payload = { measurements: { temperature: { value: 42, unit: "C" } } };
+    await runtime.ingestMqttMessage({
+      mapping: { topic: "factory/telemetry", twinId: "0xtwin", aspect: "telemetry", sampleType: "observed" },
+      topic: "factory/telemetry", value: payload, observedAt: 123,
+    });
+    expect((await request(runtime.app).get("/api/v1/capabilities")).body.realtime).toMatchObject({ supported: true, transport: "sse", encryptedPayloadPassthrough: true });
+    const latest = await request(runtime.app).get("/api/v1/twins/0xtwin/realtime/latest");
+    expect(latest.status).toBe(200);
+    expect(latest.body).toMatchObject({ twinId: "0xtwin", observedAt: 123, payload, encryption: { encrypted: false } });
+  });
+
+  it("passes encrypted realtime envelopes through unchanged", async () => {
+    const runtime = createApp(testConfig(), adapter);
+    const envelope = { version: 1, encrypted: true, algorithm: "AES-256-GCM", keyId: "line-a", salt: "c2FsdHNhbHRzYWx0c2FsdA==", nonce: "bm9uY2Vub25jZQ==", ciphertext: "Y2lwaGVydGV4dA==", authTag: "dGFn" };
+    runtime.realtime.publish({ mapping: { topic: "factory/secure", twinId: "0xtwin", aspect: "telemetry", sampleType: "encrypted" }, topic: "factory/secure", value: envelope, observedAt: 456 });
+    const latest = await request(runtime.app).get("/api/v1/twins/0xtwin/realtime/latest");
+    expect(latest.body.payload).toEqual(envelope);
+    expect(latest.body.encryption).toMatchObject({ encrypted: true, algorithm: "AES-256-GCM", keyId: "line-a", version: 1 });
+  });
+
   it("processes REST dataset, hashes it and delegates to ObjectID", async () => {
     const app = createApp(testConfig({ dataset: { directory: dataDirectory } }), adapter).app;
     const response = await request(app).post("/api/v1/twins/0xtwin/datasets").send({ datasetType: "telemetry", data: [{ value: 42 }] });

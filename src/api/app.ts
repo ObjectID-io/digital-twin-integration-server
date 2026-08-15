@@ -30,6 +30,7 @@ import type { StorageRouter } from "../storage/storage-router.js";
 import { ObjectIdTwinIndexer } from "../indexer/objectid.js";
 import type { PaginationOptions } from "../indexer/types.js";
 import { validateCompositionInput, validateIdentifierMappingInput, validateInterfaceInput } from "../twin/standardsValidation.js";
+import { TwinRealtimeHub } from "../realtime/hub.js";
 import {
   policyDenied, queueDepth, registry as metricsRegistry, requestsTotal, requestDuration, threadFailures,
 } from "../health/metrics.js";
@@ -43,6 +44,7 @@ export interface AppRuntime {
   worker: IngestionWorker;
   aggregator: DatasetWindowAggregator;
   storage: StorageRouter;
+  realtime: TwinRealtimeHub;
   startConnectors(): Promise<void>;
   startConnectorIngestion(): Promise<void>;
   ingestMqttMessage(message: MappedMqttMessage): Promise<void>;
@@ -97,6 +99,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     },
   );
   const auth = createAuthProvider(config, credentials);
+  const realtime = new TwinRealtimeHub();
 
   app.get("/health", (_request, response) => response.json({ status: "ok", stateless: true, timestamp: new Date().toISOString() }));
   app.get("/ready", async (_request, response, next) => {
@@ -125,6 +128,49 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const api = express.Router();
   api.use(authMiddleware(auth));
   api.use(idempotencyMiddleware(idempotency, config.idempotency.ttlMs));
+  api.get("/capabilities", (_request, response) => response.json({
+    apiVersion: "v1",
+    realtime: { supported: true, transport: "sse", encryptedPayloadPassthrough: true },
+  }));
+  api.get("/twins/:id/realtime/status", async (request, response, next) => {
+    try {
+      const latest = realtime.latest(request.params.id!);
+      const health = await connectors.health();
+      const sourceType = latest?.source.type;
+      const connected = sourceType
+        ? health[sourceType]?.healthy === true
+        : ["mqtt", "opcua"].some((type) => health[type]?.healthy === true);
+      response.json({
+        available: connected,
+        connected,
+        hasData: Boolean(latest),
+        lastMessageAt: latest ? new Date(latest.receivedAt).toISOString() : null,
+        encrypted: latest?.encryption.encrypted ?? false,
+        keyId: latest?.encryption.keyId ?? null,
+      });
+    } catch (error) { next(error); }
+  });
+  api.get("/twins/:id/realtime/latest", (request, response) => {
+    const latest = realtime.latest(request.params.id!);
+    if (!latest) return response.status(404).json({ error: { code: "REALTIME_DATA_UNAVAILABLE", message: "No realtime data is available for this Twin", category: "CONNECTOR" } });
+    return response.set("Cache-Control", "no-store").json(latest);
+  });
+  api.get("/twins/:id/realtime/stream", (request, response) => {
+    const twinId = request.params.id!;
+    response.set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    response.flushHeaders();
+    const send = (event: string, data: unknown) => response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const latest = realtime.latest(twinId);
+    if (latest) send("snapshot", latest);
+    const unsubscribe = realtime.subscribe(twinId, (event) => send("telemetry", event));
+    const heartbeat = setInterval(() => response.write(": heartbeat\n\n"), 20_000);
+    request.on("close", () => { clearInterval(heartbeat); unsubscribe(); });
+  });
   api.get("/dids/:did/twins", async (request, response, next) => { try { response.json(await twins.findTwinsByDid(request.params.did!)); } catch (error) { next(error); } });
   api.get("/twins/:id", async (request, response, next) => { try { response.json(await twins.getTwin(request.params.id!)); } catch (error) { next(error); } });
   api.post("/twins", async (request, response, next) => { try { response.status(201).json(await twins.createProfiledTwin(request.body)); } catch (error) { next(error); } });
@@ -226,6 +272,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   }
 
   async function ingestMqttMessage(message: MappedMqttMessage) {
+    realtime.publish(message);
     if (message.mapping.mode === "dataset") {
       if (!config.dataset.aggregation.enabled) throw new AppError("DATASET_AGGREGATION_DISABLED", "Dataset aggregation is disabled", 422, "CONNECTOR");
       const mapped = mqttMessageToDataset(message);
@@ -239,7 +286,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   }
 
   return {
-    app, connectors, objectid, idempotency, queue, worker, aggregator, storage,
+    app, connectors, objectid, idempotency, queue, worker, aggregator, storage, realtime,
     async startConnectors() {
       await objectid.initialize?.();
       const resolved = await resolveCredentialReferences(config.connectors, credentials);

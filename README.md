@@ -125,6 +125,12 @@ errors. Ambiguous transaction outcomes are retried only when the adapter can
 prove the external idempotency reference was not committed; otherwise the job
 is retained in the ephemeral `failedJobs` collection.
 
+## Realtime Webview API
+
+Authenticated clients can discover realtime support with `GET /api/v1/capabilities`, inspect `GET /api/v1/twins/:id/realtime/status`, read the latest connector payload and subscribe through SSE. MQTT and OPC-UA payloads are transported unchanged. If a device publishes an encrypted envelope, this server never receives or stores its decryption password and never decrypts the payload.
+
+The user interface is a separate project: `sdellava/digital-twin-webview`. This repository contains only the integration service, industrial connectors, simulator and supporting infrastructure.
+
 ## Idempotency
 
 `memory` is the default. Set `idempotency.provider: redis` and `redisUrl` (or

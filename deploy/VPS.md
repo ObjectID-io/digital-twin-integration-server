@@ -54,23 +54,13 @@ The unauthenticated demo control console is available at `https://dt-simulator.o
 Successful on-chain publication is logged as `iota_twin_state_published` with the transaction digest. A transition emitted before the signer was enabled is not replayed automatically; select a different scenario after deployment to generate a new state event.
 The testnet signer uses a `100000000` gas budget so state publication can cover temporary storage charges before rebates are applied.
 
-## Digital Twin Console
+## Digital Twin Webview
 
-The `digital-twin-console` service publishes the read-only operational dashboard at `https://dt-demo.objectid.io` through the external `traefik_proxy` network. It keeps API and MQTT credentials server-side, streams live telemetry over SSE, and exposes technical congruity, coherence and standards-alignment checks. Demo mode remains the default; DID login signs a challenge in the browser and validates the signer against the on-chain Identity `ControllerCap` without sending the seed to the server.
+The user-facing application now lives in the separate private repository `git@github.com:sdellava/digital-twin-webview.git`. Deploy that Compose project independently. Its BFF reads IOTA directly for public QR pages and contacts this integration server only for a logged-in DID that has saved a server URL and API token.
 
-```bash
-docker network inspect traefik_proxy >/dev/null
-docker compose up -d --build digital-twin-console
-docker compose logs -f digital-twin-console
-```
+For two Compose projects on the same VPS, either expose this API behind an authenticated HTTPS hostname or attach both services to a dedicated external Docker network and enable `ALLOW_PRIVATE_INTEGRATION_SERVERS=true` only in the trusted webview deployment. Keep the default `false` on public hosted webviews. If the webview cannot route to the server because it is inside a private network, realtime data remains hidden by design.
 
-When the integration server cannot supply a logged-in user's Twin data, the console automatically enters `CHAIN ONLY` mode and resolves the Twin root, identifiers and Digital Thread events from testnet RPC/GraphQL. Off-chain sections remain empty by design. Rebuild the console image when deploying this feature because both browser and gateway dependencies changed.
-
-Authenticated users can also create and delete OIDTwins directly from the console. Twin creation uses sponsored gas: the gateway reserves gas from `GAS_STATION_1_URL` or its fallback, builds a transaction constrained to `oid_twin::create_twin`, and sends its bytes to the browser for local signing. The seed and gas-station Bearer tokens never cross their respective trust boundaries. Deletion remains a regular user-paid transaction.
-
-The compose values `IOTA_PACKAGE_ID`, `IOTA_CREDIT_PACKAGE_ID` and `IOTA_IDENTITY_PACKAGE_ID` must match the dependencies of the published Move package. The shared policy object is read from `DTIS_OID_CREDIT_POLICY_ID` in `secrets/credentials.json`; user ControllerCaps and credit tokens are discovered from the authenticated signer address and are never taken from the server signer configuration.
-
-The console presents a technical self-assessment and does not claim formal ISO certification.
+The realtime endpoints are `/api/v1/capabilities`, `/api/v1/twins/:id/realtime/status`, `/latest` and `/stream`. The existing `DTIS_AUTH_MODE=api-key` protects all of them. Encrypted MQTT payloads pass through unchanged; only the webview BFF has the per-user decryption password.
 
 ## Backblaze check
 
