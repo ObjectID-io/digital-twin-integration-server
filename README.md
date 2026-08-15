@@ -176,8 +176,8 @@ making it the source of truth.
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [STATELESS.md](docs/STATELESS.md),
 [ISO_ALIGNMENT.md](docs/ISO_ALIGNMENT.md), [STORAGE.md](docs/STORAGE.md) and
-[IMPLEMENTATION_REPORT.md](docs/IMPLEMENTATION_REPORT.md). V1 closure details
-are in [V1_COMPLETION_REPORT.md](docs/V1_COMPLETION_REPORT.md).
+[ISO_CONFORMANCE_MATRIX.md](docs/ISO_CONFORMANCE_MATRIX.md).
+
 # ISO Alignment Evidence
 
 The server provides versioned profile validation, a replaceable Twin indexer boundary, globally indexed identifier resolution, paginated Digital Thread verification/audit reports, on-chain role-grant enforcement, and MQTT/OPC-UA ingestion through one queue/aggregation pipeline. See `docs/ISO_CONFORMANCE_MATRIX.md` and run `npm run conformance-report` for repeatable technical evidence. These capabilities are ISO-aligned; they are not an ISO certification claim.
