@@ -11,6 +11,7 @@ import "./assurance-dialog.css";
 import "./thread-dialog.css";
 import "./audit-evidence.css";
 import "./simulator-alert.css";
+import "./twin-qr.css";
 import { App } from "./App.jsx";
 
 createRoot(document.getElementById("root")).render(

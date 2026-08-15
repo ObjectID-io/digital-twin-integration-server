@@ -174,6 +174,36 @@ app.get("/api/live", (request, response) => {
   request.on("close", () => { clearInterval(heartbeat); streams.delete(response); });
 });
 
+app.get("/api/public/twins/:twinId/dashboard", async (request, response) => {
+  const twinId = String(request.params.twinId ?? "");
+  if (!/^0x[0-9a-f]{64}$/i.test(twinId)) return response.status(400).json({ error: "A valid Twin object ID is required" });
+
+  try {
+    const publicData = await chain.dashboard(twinId);
+    const expectedType = `${config.packageId}::oid_twin::OIDTwin`;
+    if (String(publicData.twin?.data?.type ?? "") !== expectedType) {
+      return response.status(404).json({ error: "Digital Twin not found" });
+    }
+
+    const unavailable = { ok: false, status: 404, error: "Not exposed in the public on-chain view" };
+    return response.set("Cache-Control", "public, max-age=30").json({
+      generatedAt: new Date().toISOString(),
+      meta: { twinId, network: config.network, packageId: config.packageId, mode: "public", dataSource: "chain-only" },
+      health: unavailable,
+      readiness: unavailable,
+      twin: { ok: true, status: 200, data: publicData.twin },
+      thread: { ok: true, status: 200, data: { items: publicData.events, hasMore: false, complete: true, source: "iota-chain" } },
+      verification: unavailable,
+      report: unavailable,
+      identifiers: { ok: true, status: 200, data: publicData.identifiers },
+      telemetry: emptyLive(),
+    });
+  } catch (error) {
+    log("public_twin_load_failed", { twinId, error: error instanceof Error ? error.message : String(error) });
+    return response.status(404).json({ error: "Digital Twin not found" });
+  }
+});
+
 app.get("/api/dashboard", async (request, response) => {
   const requestedTwinId = String(request.query.twinId ?? config.twinId);
   if (requestedTwinId !== config.twinId) {

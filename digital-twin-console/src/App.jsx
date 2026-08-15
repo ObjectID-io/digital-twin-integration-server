@@ -3,6 +3,8 @@ import { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";
 import { fieldsOf, LIFECYCLE, qualityScore, runQualityChecks, textOf } from "./quality.js";
 import { eventLabel, isIotaObjectId, objectExplorerUrl, transactionExplorerUrl } from "./thread-ui.js";
 import { validateAuditEvidence } from "./audit-validation.js";
+import { TwinQrCode } from "./TwinQrCode.jsx";
+import { twinIdFromLocation, twinShareUrl } from "./twin-share.js";
 import "./auth.css";
 import { buildCreateTwinTransaction, buildDeleteTwinTransaction, createdTwinId, executeTwinTransaction, usableCreditTokens } from "./twin-mutations.js";
 
@@ -37,13 +39,15 @@ const SIMULATION_FAULTS = {
 };
 
 export function App() {
+  const initialPublicTwinId = twinIdFromLocation(window.location);
   const [dashboard, setDashboard] = useState(null);
   const [telemetry, setTelemetry] = useState({ connected: false, latest: null, samples: [], received: 0 });
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [session, setSession] = useState(null);
-  const [selectedTwinId, setSelectedTwinId] = useState("");
+  const [selectedTwinId, setSelectedTwinId] = useState(initialPublicTwinId);
+  const [publicView, setPublicView] = useState(Boolean(initialPublicTwinId));
   const [loginOpen, setLoginOpen] = useState(false);
   const [twinPickerOpen, setTwinPickerOpen] = useState(false);
   const [mutationMode, setMutationMode] = useState(null);
@@ -63,7 +67,10 @@ export function App() {
     async function load() {
       try {
         const query = selectedTwinId ? `?twinId=${encodeURIComponent(selectedTwinId)}` : "";
-        const response = await fetch(`/api/dashboard${query}`, { cache: "no-store" });
+        const endpoint = publicView && selectedTwinId
+          ? `/api/public/twins/${encodeURIComponent(selectedTwinId)}/dashboard`
+          : `/api/dashboard${query}`;
+        const response = await fetch(endpoint, { cache: "no-store" });
         if (!response.ok) throw new Error(`Dashboard API ${response.status}`);
         const value = await response.json();
         if (active) {
@@ -84,12 +91,18 @@ export function App() {
       setTelemetry((current) => ({ ...current, connected: true, latest: sample, received, samples: [...(current.samples ?? []), sample].slice(-60) }));
     });
     return () => { active = false; clearInterval(poll); stream?.close(); };
-  }, [selectedTwinId]);
+  }, [selectedTwinId, publicView]);
+
+  function openPrivateTwin(twinId) {
+    setPublicView(false);
+    setSelectedTwinId(twinId);
+    window.history.replaceState({}, "", "/");
+  }
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     setSession(null);
-    setSelectedTwinId("");
+    if (!publicView) setSelectedTwinId("");
     signerRef.current = null;
   }
 
@@ -100,6 +113,8 @@ export function App() {
   const verification = dashboard?.verification?.ok ? dashboard.verification.data : null;
   const readiness = dashboard?.readiness?.ok ? dashboard.readiness.data : null;
   const twinId = dashboard?.meta?.twinId ?? "";
+  const shareUrl = twinShareUrl(window.location.origin, twinId);
+  const isPublicView = dashboard?.meta?.mode === "public";
   const checks = runQualityChecks({ twin, telemetry: latest, verification, readiness, expectedTwinId: twinId });
   const score = qualityScore(checks);
   const lifecycle = LIFECYCLE[Number(fields.lifecycle_state)] ?? "Operation";
@@ -138,8 +153,8 @@ export function App() {
       {latest?.simulationScenario && latest.simulationScenario !== "normal" && <div className="simulation-alert"><div><small>SIMULATED CNC FAULT</small><strong>{latest.simulationScenario.replaceAll("-", " ")}</strong></div><p>{SIMULATION_FAULTS[latest.simulationScenario] || "Injected simulator condition"}</p><span>{latest.operatingState?.toUpperCase() || "ALARM"}</span></div>}
       {loading && <Loading />}
       {loginOpen && <DidLoginDialog onClose={() => setLoginOpen(false)} onAuthenticated={(value, keypair) => { signerRef.current = keypair; setSession(value); setLoginOpen(false); setTwinPickerOpen(true); }} />}
-      {session && twinPickerOpen && <TwinPicker session={session} selectedTwinId={selectedTwinId} onClose={() => setTwinPickerOpen(false)} onSelect={(twinId) => { setSelectedTwinId(twinId); setTwinPickerOpen(false); }} />}
-      {session && mutationMode === "create" && <CreateTwinDialog session={session} keypair={signerRef.current} onClose={() => setMutationMode(null)} onComplete={async ({ digest, twinId: createdId, name }) => { setMutationMode(null); setTransactionNotice({ title: "DIGITAL TWIN CREATED", message: `${name} is confirmed on IOTA.`, digest }); if (createdId) { const remembered = await fetch("/api/my/twins/remember", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ twinId: createdId }) }).then(async (response) => response.ok ? response.json() : null).catch(() => null); if (remembered) setSession(remembered); else setSession((current) => ({ ...current, twins: [...current.twins, { twinId: createdId, name, description: "", revision: 1, roles: ["owner", "creator", "steward"] }] })); setSelectedTwinId(createdId); } }} />}
+      {session && twinPickerOpen && <TwinPicker session={session} selectedTwinId={selectedTwinId} onClose={() => setTwinPickerOpen(false)} onSelect={(twinId) => { openPrivateTwin(twinId); setTwinPickerOpen(false); }} />}
+      {session && mutationMode === "create" && <CreateTwinDialog session={session} keypair={signerRef.current} onClose={() => setMutationMode(null)} onComplete={async ({ digest, twinId: createdId, name }) => { setMutationMode(null); setTransactionNotice({ title: "DIGITAL TWIN CREATED", message: `${name} is confirmed on IOTA.`, digest }); if (createdId) { const remembered = await fetch("/api/my/twins/remember", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ twinId: createdId }) }).then(async (response) => response.ok ? response.json() : null).catch(() => null); if (remembered) setSession(remembered); else setSession((current) => ({ ...current, twins: [...current.twins, { twinId: createdId, name, description: "", revision: 1, roles: ["owner", "creator", "steward"] }] })); openPrivateTwin(createdId); } }} />}
       {session && mutationMode === "delete" && <DeleteTwinDialog twin={session.twins.find((item) => item.twinId === selectedTwinId)} network={dashboard?.meta?.network ?? "testnet"} keypair={signerRef.current} onClose={() => setMutationMode(null)} onComplete={async ({ digest, twinId: deletedId, name }) => { setMutationMode(null); setTransactionNotice({ title: "DIGITAL TWIN DELETED", message: `${name} was deleted on IOTA.`, digest }); setSession((current) => ({ ...current, twins: current.twins.filter((twin) => twin.twinId !== deletedId) })); setSelectedTwinId(""); await fetch("/api/my/twins/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ twinId: deletedId }) }).catch(() => undefined); }} />}
 
       {!loading && tab === "overview" && (
@@ -184,14 +199,15 @@ export function App() {
               <Detail label="Target DID" value={textOf(fields.target_did) || "Not assigned"} mono />
               <Detail label="Twin DID" value={textOf(fields.twin_did) || "Not assigned"} mono />
               <Detail label="Revision" value={textOf(fields.revision) || "1"} />
+              <TwinQrCode value={shareUrl} />
             </div>
             <div className="panel trust-panel">
               <SectionTitle index="03" title="Trust anchor" note="IOTA TESTNET" compact />
               <Detail label="Package" value={shortId(dashboard?.meta?.packageId)} title={dashboard?.meta?.packageId} mono />
               <Detail label="Network" value={dashboard?.meta?.network || "testnet"} />
-              <Detail label="Storage" value={readiness?.storage?.backblaze?.healthy === false ? "Degraded" : "Backblaze B2 / healthy"} />
-              <Detail label="MQTT stream" value={telemetry.connected ? "Connected / QoS 1" : "Reconnecting"} />
-              <a className="external-link" href={`https://explorer.iota.org/object/${twinId}?network=testnet`} target="_blank" rel="noreferrer">VIEW ON IOTA EXPLORER <span>↗</span></a>
+              <Detail label="Storage" value={isPublicView ? "Hidden in public view" : readiness?.storage?.backblaze?.healthy === false ? "Degraded" : "Backblaze B2 / healthy"} />
+              <Detail label="MQTT stream" value={isPublicView ? "Not exposed" : telemetry.connected ? "Connected / QoS 1" : "Reconnecting"} />
+              <a className="external-link" href={`https://explorer.iota.org/object/${twinId}?network=${dashboard?.meta?.network ?? "testnet"}`} target="_blank" rel="noreferrer">VIEW ON IOTA EXPLORER <span>↗</span></a>
             </div>
           </section>
         </section>
