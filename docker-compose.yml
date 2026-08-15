@@ -195,6 +195,8 @@ services:
       IOTA_PACKAGE_ID: 0x8228c5a214d4e7d8a194090fd70d31ab9b000e5bfdb5f4fb558e042db145d835
       IOTA_CREDIT_PACKAGE_ID: 0x889c3003a9f1a6fe807782b5d6b2acc53942c8e809fdda8d7342676768c86d8e
       IOTA_IDENTITY_PACKAGE_ID: 0x8db20b752687c2bc538aad3e1a356736312cf83ffc933fbddc2d1f8d0cc92faa
+      GAS_STATION_1_URL: ${GAS_STATION_1_URL:-https://gas1.objectid.io}
+      GAS_STATION_2_URL: ${GAS_STATION_2_URL:-https://gas2.objectid.io}
       MQTT_URL: mqtt://mosquitto:1883
       MQTT_TOPIC: ${SIM_MQTT_TOPIC:-objectid/twins/telemetry/dataset}
       MQTT_USERNAME: ${MQTT_USERNAME:-objectid}

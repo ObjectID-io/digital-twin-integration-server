@@ -1,5 +1,6 @@
 import { IotaClient } from "@iota/iota-sdk/client";
 import { Transaction } from "@iota/iota-sdk/transactions";
+import { fromBase64 } from "@iota/bcs";
 
 const GAS_BUDGET = 100_000_000;
 
@@ -37,6 +38,22 @@ export async function executeTwinTransaction({ keypair, network, transaction }) 
   const result = await client.waitForTransaction({ digest: submitted.digest, options: { showEffects: true, showObjectChanges: true } });
   const status = result.effects?.status?.status;
   if (status && status !== "success") throw new Error(result.effects?.status?.error || "IOTA transaction failed");
+  return result;
+}
+
+export async function executeSponsoredCreateTwin({ keypair, input }) {
+  const preparedResponse = await fetch("/api/my/twins/create/prepare", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  });
+  const prepared = await preparedResponse.json();
+  if (!preparedResponse.ok) throw new Error(prepared.error || "Unable to prepare sponsored transaction");
+  const signed = await keypair.signTransaction(fromBase64(prepared.transactionBytes));
+  const executeResponse = await fetch("/api/my/twins/create/execute", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pendingId: prepared.pendingId, signature: signed.signature }),
+  });
+  const result = await executeResponse.json();
+  if (!executeResponse.ok) throw new Error(result.error || "Unable to execute sponsored transaction");
   return result;
 }
 

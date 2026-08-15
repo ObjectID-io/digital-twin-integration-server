@@ -10,6 +10,7 @@ This deployment starts the ObjectID Digital Twin Integration Server, an authenti
 4. Keep `MQTT_PASSWORD` in `secrets/credentials.json` identical to the contents of `secrets/mqtt_password.txt`.
 5. Set `DTIS_IOTA_SEED` to the 64-character hexadecimal seed, without `0x`, and set `DTIS_SIGNER_ADDRESS` to its derived IOTA address.
 6. Set `DTIS_TWIN_CONTROLLER_CAP_ID`, `DTIS_OID_CREDIT_POLICY_ID`, and `DTIS_OID_CREDIT_TOKEN_ID` to objects controlled by that signer.
+7. Set `DTIS_GAS_STATION_1_TOKEN` and `DTIS_GAS_STATION_2_TOKEN` to the ObjectID gas-station Bearer tokens. These values are required for sponsored Twin creation and must remain in `secrets/credentials.json`.
 
 The supplied Backblaze application key is kept only in the ignored local credentials file. Rotate it if this workspace or conversation has been shared.
 The IOTA seed is equivalent to a private signing key. Never commit `secrets/credentials.json`; startup fails if the seed derives an address different from `DTIS_SIGNER_ADDRESS`.
@@ -65,7 +66,9 @@ docker compose logs -f digital-twin-console
 
 When the integration server cannot supply a logged-in user's Twin data, the console automatically enters `CHAIN ONLY` mode and resolves the Twin root, identifiers and Digital Thread events from testnet RPC/GraphQL. Off-chain sections remain empty by design. Rebuild the console image when deploying this feature because both browser and gateway dependencies changed.
 
-Authenticated users can also create and delete OIDTwins directly from the console. The compose values `IOTA_PACKAGE_ID`, `IOTA_CREDIT_PACKAGE_ID` and `IOTA_IDENTITY_PACKAGE_ID` must match the dependencies of the published Move package. The shared policy object is read from `DTIS_OID_CREDIT_POLICY_ID` in `secrets/credentials.json`; user ControllerCaps and credit tokens are discovered from the authenticated signer address and are never taken from the server signer configuration.
+Authenticated users can also create and delete OIDTwins directly from the console. Twin creation uses sponsored gas: the gateway reserves gas from `GAS_STATION_1_URL` or its fallback, builds a transaction constrained to `oid_twin::create_twin`, and sends its bytes to the browser for local signing. The seed and gas-station Bearer tokens never cross their respective trust boundaries. Deletion remains a regular user-paid transaction.
+
+The compose values `IOTA_PACKAGE_ID`, `IOTA_CREDIT_PACKAGE_ID` and `IOTA_IDENTITY_PACKAGE_ID` must match the dependencies of the published Move package. The shared policy object is read from `DTIS_OID_CREDIT_POLICY_ID` in `secrets/credentials.json`; user ControllerCaps and credit tokens are discovered from the authenticated signer address and are never taken from the server signer configuration.
 
 The console presents a technical self-assessment and does not claim formal ISO certification.
 

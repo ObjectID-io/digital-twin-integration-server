@@ -5,6 +5,7 @@ import express from "express";
 import mqtt from "mqtt";
 import { DidAuthService } from "./did-auth.js";
 import { ChainReader } from "./chain-reader.js";
+import { createGasStationClient, GasStationBroker } from "./gas-station.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const config = {
@@ -22,7 +23,9 @@ const config = {
   mqttUrl: process.env.MQTT_URL ?? "mqtt://mosquitto:1883",
   mqttTopic: process.env.MQTT_TOPIC ?? "objectid/twins/telemetry/dataset",
   mqttUsername: process.env.MQTT_USERNAME ?? "objectid",
-  mqttPasswordFile: process.env.MQTT_PASSWORD_FILE ?? "/run/secrets/mqtt_password"
+  mqttPasswordFile: process.env.MQTT_PASSWORD_FILE ?? "/run/secrets/mqtt_password",
+  gasStation1Url: process.env.GAS_STATION_1_URL ?? "https://gas1.objectid.io",
+  gasStation2Url: process.env.GAS_STATION_2_URL ?? "https://gas2.objectid.io"
 };
 
 if (!config.twinId) throw new Error("TWIN_ID is required");
@@ -30,6 +33,8 @@ if (!config.twinId) throw new Error("TWIN_ID is required");
 const credentials = JSON.parse(await readFile(config.credentialsFile, "utf8"));
 const apiKey = String(credentials.DTIS_API_KEY ?? "");
 const creditPolicyId = String(credentials.DTIS_OID_CREDIT_POLICY_ID ?? "");
+const gasStation1Token = String(credentials.DTIS_GAS_STATION_1_TOKEN ?? "");
+const gasStation2Token = String(credentials.DTIS_GAS_STATION_2_TOKEN ?? "");
 if (!apiKey) throw new Error("DTIS_API_KEY is missing from the credentials file");
 
 const mqttPassword = (await readFile(config.mqttPasswordFile, "utf8")).trimEnd();
@@ -51,6 +56,10 @@ const live = { connected: false, latest: null, samples: [], received: 0, lastErr
 const streams = new Set();
 const didAuth = new DidAuthService({ network: config.network, rpcUrl: config.rpcUrl, audience: config.authAudience });
 const chain = new ChainReader({ network: config.network, rpcUrl: config.rpcUrl, graphqlUrl: config.graphqlUrl, packageId: config.packageId });
+const gasStation = new GasStationBroker({
+  client: createGasStationClient(config),
+  stations: [{ url: config.gasStation1Url, token: gasStation1Token }, { url: config.gasStation2Url, token: gasStation2Token }],
+});
 const mqttClient = mqtt.connect(config.mqttUrl, {
   username: config.mqttUsername,
   password: mqttPassword,
@@ -143,21 +152,24 @@ app.get("/api/my/mutation-context", async (request, response, next) => {
   try {
     const session = requestSession(request);
     if (!session) return response.status(401).json({ error: "DID login required" });
-    if (!config.creditPackageId || !config.identityPackageId || !creditPolicyId) throw new Error("ObjectID mutation configuration is incomplete");
-    const owned = await chain.ownedObjects(session.address);
-    const controllerCap = owned.find((item) => {
-      const type = objectType(item);
-      return type === `${config.identityPackageId}::oid_identity::ControllerCap` && String(objectFields(item).controller_of ?? "").toLowerCase() === didObjectId(session.did);
-    });
-    const creditType = `0x2::token::Token<${config.creditPackageId}::oid_credit::OID_CREDIT>`;
-    const creditTokens = owned.filter((item) => objectType(item) === creditType).map((item) => ({
-      objectId: String(item.data?.objectId ?? ""), balance: String(objectFields(item).balance ?? "0"),
-    }));
-    if (!controllerCap) return response.status(409).json({ error: "The DID ControllerCap is no longer owned by this signer" });
-    response.set("Cache-Control", "no-store").json({
-      packageId: config.packageId, creditPackageId: config.creditPackageId, creditPolicyId,
-      identityPackageId: config.identityPackageId, controllerCapId: controllerCap.data.objectId, creditTokens, clockId: "0x6", network: config.network,
-    });
+    response.set("Cache-Control", "no-store").json(await mutationContext(session));
+  } catch (error) { next(error); }
+});
+app.post("/api/my/twins/create/prepare", async (request, response, next) => {
+  try {
+    const sessionToken = cookieValue(request, "oid_dt_session");
+    const session = didAuth.session(sessionToken);
+    if (!session) return response.status(401).json({ error: "DID login required" });
+    const result = await gasStation.prepareCreate({ sessionToken, session, context: await mutationContext(session), input: request.body });
+    response.set("Cache-Control", "no-store").json(result);
+  } catch (error) { next(error); }
+});
+app.post("/api/my/twins/create/execute", async (request, response, next) => {
+  try {
+    const sessionToken = cookieValue(request, "oid_dt_session");
+    const session = didAuth.session(sessionToken);
+    if (!session) return response.status(401).json({ error: "DID login required" });
+    response.set("Cache-Control", "no-store").json(await gasStation.executeCreate({ sessionToken, session, pendingId: request.body?.pendingId, signature: request.body?.signature }));
   } catch (error) { next(error); }
 });
 app.get("/api/live", (request, response) => {
@@ -285,6 +297,21 @@ async function listTwinsForDid(did) {
     error.status = 503;
     throw error;
   }
+}
+
+async function mutationContext(session) {
+  if (!config.creditPackageId || !config.identityPackageId || !creditPolicyId) throw new Error("ObjectID mutation configuration is incomplete");
+  const owned = await chain.ownedObjects(session.address);
+  const controllerCap = owned.find((item) => objectType(item) === `${config.identityPackageId}::oid_identity::ControllerCap`
+    && String(objectFields(item).controller_of ?? "").toLowerCase() === didObjectId(session.did));
+  const creditType = `0x2::token::Token<${config.creditPackageId}::oid_credit::OID_CREDIT>`;
+  const creditTokens = owned.filter((item) => objectType(item) === creditType).map((item) => ({
+    objectId: String(item.data?.objectId ?? ""), balance: String(objectFields(item).balance ?? "0"),
+  }));
+  if (!controllerCap) { const error = new Error("The DID ControllerCap is no longer owned by this signer"); error.status = 409; throw error; }
+  return { packageId: config.packageId, creditPackageId: config.creditPackageId, creditPolicyId,
+    identityPackageId: config.identityPackageId, controllerCapId: controllerCap.data.objectId, creditTokens, clockId: "0x6", network: config.network,
+    sponsoredCreation: gasStation.configured };
 }
 
 function requestSession(request) { return didAuth.session(cookieValue(request, "oid_dt_session")); }

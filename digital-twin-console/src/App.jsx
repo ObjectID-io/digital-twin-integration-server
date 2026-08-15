@@ -6,7 +6,7 @@ import { validateAuditEvidence } from "./audit-validation.js";
 import { TwinQrCode } from "./TwinQrCode.jsx";
 import { twinIdFromLocation, twinShareUrl } from "./twin-share.js";
 import "./auth.css";
-import { buildCreateTwinTransaction, buildDeleteTwinTransaction, createdTwinId, executeTwinTransaction, usableCreditTokens } from "./twin-mutations.js";
+import { buildDeleteTwinTransaction, executeSponsoredCreateTwin, executeTwinTransaction, usableCreditTokens } from "./twin-mutations.js";
 
 const STANDARD_ROWS = [
   { ref: "ISO/IEC 30188:2026", area: "Reference architecture", evidence: "Autonomous OIDTwin root with identity, lifecycle, data, model, interface and governance views", status: "Aligned", url: "https://www.iso.org/standard/53308.html" },
@@ -354,9 +354,8 @@ function CreateTwinDialog({ session, keypair, onClose, onComplete }) {
       if (!keypair) throw new Error("Signing is not enabled. Log in again with DID and seed.");
       if (!context || !form.creditTokenId) throw new Error("An OID Credit token with positive balance is required.");
       JSON.parse(form.immutableMetadata); JSON.parse(form.mutableMetadata);
-      const transaction = buildCreateTwinTransaction(context, form);
-      const result = await executeTwinTransaction({ keypair, network: context.network, transaction });
-      await onComplete({ digest: result.digest, twinId: createdTwinId(result, context.packageId), name: form.name });
+      const result = await executeSponsoredCreateTwin({ keypair, input: form });
+      await onComplete(result);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   }
@@ -376,11 +375,12 @@ function CreateTwinDialog({ session, keypair, onClose, onComplete }) {
       <label><span>MATURITY LEVEL</span><input type="number" min="0" max="255" value={form.maturityLevel} onChange={update("maturityLevel")} /></label>
       <label><span>OID CREDIT TOKEN</span><select value={form.creditTokenId} onChange={update("creditTokenId")} disabled={!credits.length}><option value="">{credits.length ? "Select credit token" : "No spendable credits"}</option>{credits.map((token)=><option value={token.objectId} key={token.objectId}>{shortId(token.objectId)} · balance {token.balance}</option>)}</select></label>
       {context && !credits.length && <div className="credit-warning wide"><b>OID CREDIT REQUIRED</b><span>The published Twin package requires credits from package {shortId(context.creditPackageId)}. {context.creditTokens.length ? `The compatible token balance is ${context.creditTokens.map((token) => token.balance).join(", ")}.` : "No compatible token is owned by this signer."}</span></div>}
+      {context && !context.sponsoredCreation && <div className="credit-warning wide"><b>GAS STATION UNAVAILABLE</b><span>Sponsored creation is disabled because no ObjectID gas-station token is configured on the server.</span></div>}
       <label className="wide"><span>IMMUTABLE METADATA / JSON</span><textarea value={form.immutableMetadata} onChange={update("immutableMetadata")} /></label>
       <label className="wide"><span>MUTABLE METADATA / JSON</span><textarea value={form.mutableMetadata} onChange={update("mutableMetadata")} /></label>
-      {context && <div className="mutation-cost wide"><b>TRANSACTION AUTHORITY</b><span>{shortId(session.did)} · 1 OID Credit · gas paid by {shortId(session.address)}</span></div>}
+      {context && <div className="mutation-cost wide"><b>TRANSACTION AUTHORITY</b><span>{shortId(session.did)} · 1 OID Credit · gas sponsored by ObjectID</span></div>}
       {error && <div className="login-error wide">{error}</div>}
-      <div className="mutation-actions wide"><button type="button" onClick={onClose} disabled={busy}>CANCEL</button><button type="submit" disabled={busy || !context || !credits.length}>{busy ? "SIGNING & CONFIRMING…" : "CREATE ON IOTA"}</button></div>
+      <div className="mutation-actions wide"><button type="button" onClick={onClose} disabled={busy}>CANCEL</button><button type="submit" disabled={busy || !context || !credits.length || !context.sponsoredCreation}>{busy ? "SIGNING & CONFIRMING…" : "CREATE WITH SPONSORED GAS"}</button></div>
     </form>
   </MutationDialog>;
 }
