@@ -47,6 +47,9 @@ commands:
   storeFile: ./data/commands.json
   requestTopicTemplate: objectid/twins/{twinId}/commands/request
   resultTopic: objectid/twins/+/commands/+/result
+  # Mount the same base64-encoded 32-byte key in the authorized device.
+  signingKeyFile: /run/secrets/command_signing_key
+  signingKeyId: dtis-command-v1
   catalogs:
     - twinId: "0xreplace"
       interfaceId: urn:objectid:interface:machine-control:v1

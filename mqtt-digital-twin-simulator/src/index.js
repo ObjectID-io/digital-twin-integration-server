@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import mqtt from "mqtt";
 import { createTelemetry } from "./telemetry.js";
 import { createControlServer } from "./control-server.js";
-import { executeSimulatorCommand } from "./commands.js";
+import { executeSimulatorCommand, verifySimulatorCommand } from "./commands.js";
 
 const config = {
   mqttUrl: process.env.MQTT_URL ?? "mqtt://mosquitto:1883",
@@ -14,6 +14,9 @@ const config = {
   intervalMs: integer("SIM_INTERVAL_MS", 5000, 1000, 86_400_000),
   assetId: process.env.SIM_ASSET_ID ?? "unknown",
   machineName: process.env.SIM_MACHINE_NAME ?? "mqtt-digital-twin",
+  commandInterfaceId: process.env.SIM_COMMAND_INTERFACE_ID ?? "urn:objectid:interface:simulator-control:v1",
+  commandSigningKeyFile: process.env.SIM_COMMAND_SIGNING_KEY_FILE ?? "/run/secrets/command_signing_key",
+  commandSigningKeyId: process.env.SIM_COMMAND_SIGNING_KEY_ID ?? "dtis-command-v1",
   healthPort: integer("HEALTH_PORT", 8081, 1, 65535)
 };
 config.commandTopic = process.env.SIM_COMMAND_TOPIC ?? `objectid/twins/${config.assetId}/commands/request`;
@@ -27,6 +30,8 @@ const status = {
 
 const password = (await readFile(config.passwordFile, "utf8")).trimEnd();
 if (!password) throw new Error("MQTT password file is empty");
+const commandSigningKey = Buffer.from((await readFile(config.commandSigningKeyFile, "utf8")).trim(), "base64");
+if (commandSigningKey.length < 32) throw new Error("Simulator command signing key must contain at least 32 random bytes encoded as base64");
 const client = mqtt.connect(config.mqttUrl, {
   username: config.username,
   password,
@@ -40,7 +45,7 @@ let sequence = 0;
 let timer;
 let publishing = false;
 const control = { scenario: "normal", paused: false, changedAt: new Date().toISOString() };
-const processedCommands = new Set();
+const processedCommands = new Map();
 
 client.on("connect", () => {
   status.connected = true;
@@ -51,7 +56,7 @@ client.on("connect", () => {
   void client.subscribeAsync(config.commandTopic, { qos: 1 });
 });
 
-client.on("message", (_topic, payload) => void handleCommand(payload));
+client.on("message", (topic, payload) => void handleCommand(topic, payload));
 
 client.on("offline", () => { status.connected = false; });
 client.on("close", () => { status.connected = false; });
@@ -104,23 +109,42 @@ async function publishStateTransition({ from, to }) {
   log("fault_transition_published", { from, to, topic: config.stateTopic, sequence });
 }
 
-async function handleCommand(payload) {
+async function handleCommand(topic, payload) {
   let request;
-  try { request = JSON.parse(payload.toString()); } catch { return; }
+  try { request = JSON.parse(payload.toString()); }
+  catch { log("command_rejected", { code: "COMMAND_JSON_INVALID" }); return; }
   const commandId = String(request?.commandId ?? "");
-  if (!commandId || processedCommands.has(commandId) || request?.twinId !== config.assetId) return;
-  processedCommands.add(commandId);
-  if (processedCommands.size > 1000) processedCommands.delete(processedCommands.values().next().value);
+  const validId = /^urn:uuid:[0-9a-f-]{36}$/i.test(commandId);
+  if (topic !== config.commandTopic || request?.twinId !== config.assetId || !validId) { log("command_rejected", { commandId, code: "COMMAND_ROUTE_INVALID" }); return; }
   const uuid = commandId.replace(/^urn:uuid:/, "");
   const resultTopic = `objectid/twins/${config.assetId}/commands/${uuid}/result`;
+  const prior = processedCommands.get(commandId);
+  if (prior) { await publishCommandResult(resultTopic, prior); log("command_result_replayed", { commandId }); return; }
   try {
-    await client.publishAsync(resultTopic, JSON.stringify({ specVersion: "objectid.command-result.v1", commandId, twinId: config.assetId, status: "accepted", acceptedAt: new Date().toISOString() }), { qos: 1, retain: false });
+    verifySimulatorCommand(request, { assetId: config.assetId, interfaceId: config.commandInterfaceId, signingKey: commandSigningKey, signingKeyId: config.commandSigningKeyId });
+    await publishCommandResult(resultTopic, resultEnvelope(commandId, "accepted", { acceptedAt: new Date().toISOString() }));
+    await publishCommandResult(resultTopic, resultEnvelope(commandId, "executing", { startedAt: new Date().toISOString() }));
+    const previousScenario = control.scenario;
     const result = executeSimulatorCommand(control, request);
-    await client.publishAsync(resultTopic, JSON.stringify({ specVersion: "objectid.command-result.v1", commandId, twinId: config.assetId, status: "succeeded", completedAt: new Date().toISOString(), result }), { qos: 1, retain: false });
+    if (previousScenario !== control.scenario) await publishStateTransition({ from: previousScenario, to: control.scenario });
+    const final = resultEnvelope(commandId, "succeeded", { completedAt: new Date().toISOString(), result });
+    rememberResult(commandId, final);
+    await publishCommandResult(resultTopic, final);
     log("command_succeeded", { commandId, command: request.command?.name, result });
   } catch (error) {
-    await client.publishAsync(resultTopic, JSON.stringify({ specVersion: "objectid.command-result.v1", commandId, twinId: config.assetId, status: "failed", completedAt: new Date().toISOString(), error: { code: "SIMULATOR_COMMAND_FAILED", message: error.message } }), { qos: 1, retain: false });
+    const status = error?.code ? "rejected" : "failed";
+    const final = resultEnvelope(commandId, status, { completedAt: new Date().toISOString(), error: { code: error?.code ?? "SIMULATOR_COMMAND_FAILED", message: error instanceof Error ? error.message : String(error) } });
+    rememberResult(commandId, final);
+    await publishCommandResult(resultTopic, final);
+    log("command_rejected", { commandId, code: final.error.code });
   }
+}
+
+function resultEnvelope(commandId, status, fields) { return { specVersion: "objectid.command-result.v1", commandId, twinId: config.assetId, status, ...fields }; }
+async function publishCommandResult(topic, value) { await client.publishAsync(topic, JSON.stringify(value), { qos: 1, retain: false }); }
+function rememberResult(commandId, result) {
+  processedCommands.set(commandId, result);
+  if (processedCommands.size > 1000) processedCommands.delete(processedCommands.keys().next().value);
 }
 
 async function shutdown(signal) {

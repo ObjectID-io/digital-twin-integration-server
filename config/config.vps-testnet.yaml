@@ -59,6 +59,8 @@ commands:
   storeFile: /data/commands.json
   requestTopicTemplate: objectid/twins/{twinId}/commands/request
   resultTopic: objectid/twins/+/commands/+/result
+  signingKeyFile: /run/secrets/command_signing_key
+  signingKeyId: dtis-command-v1
   catalogs:
     - twinId: "0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b"
       interfaceId: urn:objectid:interface:simulator-control:v1

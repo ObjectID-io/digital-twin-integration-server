@@ -41,5 +41,7 @@ export interface CommandConfig {
   storeFile: string;
   requestTopicTemplate: string;
   resultTopic: string;
+  signingKeyFile?: string;
+  signingKeyId?: string;
   catalogs: CommandCatalog[];
 }

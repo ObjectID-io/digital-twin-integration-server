@@ -153,6 +153,8 @@ objectid/twins/{twinId}/commands/{commandId}/result
 
 The HTTP API exposes the catalog and command history under `/api/v1/twins/{id}/commands`. Owner, steward, operator or maintainer authority is checked before dispatch. Safety-relevant commands are rejected: this channel is not an emergency-stop or certified safety function.
 
+MQTT command requests can additionally be authenticated at the device boundary. Configure `commands.signingKeyFile` with a base64-encoded key containing at least 32 random bytes and mount the same secret into the device or simulator. The Integration Server signs the RFC 8785 canonical envelope with HMAC-SHA256; consumers verify the signature, route, expiry, idempotency key and allowlisted interface before execution. Use a key dedicated to command transport and rotate `signingKeyId` when replacing it.
+
 ## Storage retention
 
 Managed datasets, models, evidence and event payloads are pruned automatically after five days by default. The current Twin owner is resolved before deletion and can receive a longer or indefinite policy through `retention.ownerPolicies`. Unresolved ownership fails closed. The policy resolver is designed to be replaced by the future ObjectID SLA resolver without changing storage providers or pruning logic. See `docs/STORAGE.md`.

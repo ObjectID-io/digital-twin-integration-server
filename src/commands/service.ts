@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { AppError } from "../common/errors.js";
 import type { TwinConnector, Subscription } from "../connectors/types.js";
 import { CommandStore } from "./store.js";
+import { CommandTransportSigner } from "./signing.js";
 import type { CommandCatalog, CommandConfig, CommandRecord, CommandStatus } from "./types.js";
 
 const finalStatuses = new Set<CommandStatus>(["succeeded", "failed", "rejected", "expired", "cancelled"]);
@@ -12,13 +13,15 @@ const Ajv = require("ajv") as any;
 export class CommandService {
   private readonly ajv = new Ajv({ allErrors: true, strict: false });
   private readonly store: CommandStore;
+  private readonly signer: CommandTransportSigner;
   private resultSubscription?: Subscription;
 
   constructor(private readonly config: CommandConfig, private readonly mqtt?: TwinConnector) {
     this.store = new CommandStore(config.storeFile);
+    this.signer = new CommandTransportSigner(config.signingKeyFile, config.signingKeyId);
   }
 
-  capabilities() { return { enabled: this.config.enabled, transport: "mqtt", profile: "objectid.command.v1", resultProfile: "objectid.command-result.v1" }; }
+  capabilities() { return { enabled: this.config.enabled, transport: "mqtt", authenticatedEnvelope: this.signer.enabled, profile: "objectid.command.v1", resultProfile: "objectid.command-result.v1" }; }
 
   catalog(twinId: string): CommandCatalog {
     if (!this.config.enabled) throw new AppError("COMMANDS_DISABLED", "Command execution is disabled", 404, "CONNECTOR");
@@ -29,7 +32,9 @@ export class CommandService {
 
   async start() {
     await this.store.initialize();
-    if (!this.config.enabled || !this.mqtt?.subscribeTo) return;
+    if (!this.config.enabled) return;
+    await this.signer.initialize();
+    if (!this.mqtt?.subscribeTo) return;
     this.resultSubscription = await this.mqtt.subscribeTo(this.config.resultTopic, (value) => this.acceptResult(value), 1);
   }
 
@@ -65,7 +70,7 @@ export class CommandService {
       status: "authorized", statusUpdatedAt: now.toISOString(), transport: { type: "mqtt", requestTopic, resultTopic, qos: 1 },
     };
     await this.store.put(record);
-    await this.mqtt.write({ topic: requestTopic, payload: record, qos: 1, retain: false });
+    await this.mqtt.write({ topic: requestTopic, payload: await this.signer.sign(record), qos: 1, retain: false });
     record = { ...record, status: "dispatched", statusUpdatedAt: new Date().toISOString() };
     return this.store.put(record);
   }
