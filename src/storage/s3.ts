@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand, PutObjectCommand, S3Client,
+  DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client,
 } from "@aws-sdk/client-s3";
 import { AppError } from "../common/errors.js";
 import type { CredentialProvider } from "../security/credentials.js";
@@ -66,6 +66,26 @@ export class S3StorageProvider implements StorageProvider {
   async delete(uri: string) {
     try { await this.client.send(new DeleteObjectCommand({ Bucket: this.config.bucket, Key: this.keyFromUri(uri) })); }
     catch (error) { throw storageError("STORAGE_S3_DELETE_FAILED", error); }
+  }
+
+  async listManagedObjects() {
+    const configuredPrefix = String(this.config.prefix ?? "").replace(/^\/+|\/+$/g, "");
+    const managedPrefix = [configuredPrefix, "twins"].filter(Boolean).join("/") + "/";
+    const output: Array<{ uri: string; twinId: string; category: string; createdAt: string; size?: number }> = [];
+    let continuationToken: string | undefined;
+    do {
+      let page;
+      try { page = await this.client.send(new ListObjectsV2Command({ Bucket: this.config.bucket, Prefix: managedPrefix, ContinuationToken: continuationToken })); }
+      catch (error) { throw storageError("STORAGE_S3_LIST_FAILED", error); }
+      for (const item of page.Contents ?? []) {
+        const key = String(item.Key ?? "");
+        const segments = key.slice(managedPrefix.length).split("/");
+        if (segments.length < 3 || !segments[0] || segments[0] === "unscoped" || !item.LastModified) continue;
+        output.push({ uri: `s3://${this.config.bucket}/${key}`, twinId: segments[0]!, category: segments[1]!, createdAt: item.LastModified.toISOString(), size: item.Size });
+      }
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return output;
   }
 
   async healthCheck() {

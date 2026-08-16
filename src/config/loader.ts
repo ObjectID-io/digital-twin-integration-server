@@ -10,6 +10,7 @@ const defaults: AppConfig = {
   objectid: { network: "testnet", rpcUrl: "", packageId: "", timeoutMs: 30_000 },
   profiles: { directory: "./profiles" },
   connectors: { rest: { enabled: true }, mqtt: { enabled: false }, opcua: { enabled: false }, modbus: { enabled: false, status: "PLUGIN_READY" } },
+  commands: { enabled: false, storeFile: "./data/commands.json", requestTopicTemplate: "objectid/twins/{twinId}/commands/request", resultTopic: "objectid/twins/+/commands/+/result", catalogs: [] },
   security: {
     credentialProvider: "environment",
     authMode: "disabled",
@@ -27,6 +28,7 @@ const defaults: AppConfig = {
     providers: { local: { type: "filesystem", basePath: "./data", uriPrefix: "file://", createDirectories: true, writable: true } },
     routes: {},
   },
+  retention: { enabled: true, defaultDays: 5, intervalMs: 3_600_000, startupDelayMs: 60_000, maxDeletesPerRun: 500, ownerPolicies: [] },
 };
 
 function merge<T extends Record<string, any>>(base: T, override: Partial<T>): T {
@@ -56,6 +58,11 @@ function applyEnvironment(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig 
   if (env.DTIS_CREDENTIAL_FILE) next.security.credentialFile = env.DTIS_CREDENTIAL_FILE;
   if (env.DTIS_SERVICE_DID) next.security.serviceDid = env.DTIS_SERVICE_DID;
   if (env.DTIS_DATA_DIRECTORY) next.dataset.directory = env.DTIS_DATA_DIRECTORY;
+  if (env.DTIS_COMMANDS_ENABLED) next.commands.enabled = env.DTIS_COMMANDS_ENABLED === "true";
+  if (env.DTIS_COMMAND_STORE_FILE) next.commands.storeFile = env.DTIS_COMMAND_STORE_FILE;
+  if (env.DTIS_RETENTION_ENABLED) next.retention.enabled = env.DTIS_RETENTION_ENABLED === "true";
+  if (env.DTIS_RETENTION_DEFAULT_DAYS) next.retention.defaultDays = Number(env.DTIS_RETENTION_DEFAULT_DAYS);
+  if (env.DTIS_RETENTION_INTERVAL_MS) next.retention.intervalMs = Number(env.DTIS_RETENTION_INTERVAL_MS);
   if (env.DTIS_CACHE_TYPE) next.cache.type = env.DTIS_CACHE_TYPE as AppConfig["cache"]["type"];
   if (env.DTIS_CACHE_TTL_MS) next.cache.ttlMs = Number(env.DTIS_CACHE_TTL_MS);
   if (env.DTIS_CACHE_REDIS_URL) next.cache.redisUrl = env.DTIS_CACHE_REDIS_URL;
@@ -108,6 +115,24 @@ export async function loadConfig(path = process.env.DTIS_CONFIG ?? "./config/con
   }
   if (!Number.isInteger(config.cache.ttlMs) || config.cache.ttlMs < 1) {
     throw new AppError("CONFIG_INVALID_CACHE_TTL", "cache.ttlMs must be a positive integer", 500, "VALIDATION");
+  }
+  if (config.commands.enabled && !config.connectors.mqtt?.enabled) {
+    throw new AppError("CONFIG_COMMANDS_MQTT_REQUIRED", "commands.enabled requires the MQTT connector", 500, "VALIDATION");
+  }
+  if (!Array.isArray(config.commands.catalogs)) {
+    throw new AppError("CONFIG_COMMAND_CATALOG_INVALID", "commands.catalogs must be an array", 500, "VALIDATION");
+  }
+  if (!Number.isFinite(config.retention.defaultDays) || config.retention.defaultDays < 1) {
+    throw new AppError("CONFIG_RETENTION_DAYS_INVALID", "retention.defaultDays must be at least one day", 500, "VALIDATION");
+  }
+  if (!Number.isInteger(config.retention.intervalMs) || config.retention.intervalMs < 60_000) {
+    throw new AppError("CONFIG_RETENTION_INTERVAL_INVALID", "retention.intervalMs must be at least 60000", 500, "VALIDATION");
+  }
+  if (!Number.isInteger(config.retention.maxDeletesPerRun) || config.retention.maxDeletesPerRun < 1) {
+    throw new AppError("CONFIG_RETENTION_BATCH_INVALID", "retention.maxDeletesPerRun must be at least one", 500, "VALIDATION");
+  }
+  for (const policy of config.retention.ownerPolicies) {
+    if (!policy.ownerDid || (policy.retentionDays !== null && (!Number.isFinite(policy.retentionDays) || policy.retentionDays < 1))) throw new AppError("CONFIG_RETENTION_OWNER_POLICY_INVALID", "Owner retention policies require an ownerDid and retentionDays >= 1 or null", 500, "VALIDATION");
   }
   if (config.cache.type === "redis" && !(config.cache.redisUrl ?? config.idempotency.redisUrl)) {
     throw new AppError("CONFIG_CACHE_REDIS_URL_REQUIRED", "Redis cache requires cache.redisUrl or idempotency.redisUrl", 500, "VALIDATION");

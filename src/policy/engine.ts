@@ -11,6 +11,7 @@ export enum TwinAction {
   CreateMaturityAssessment = "maturity_assessment",
   ModifyComposition = "modify_composition",
   ModifyIdentifierMapping = "modify_identifier_mapping",
+  ExecuteCommand = "execute_command",
 }
 export type TwinActionValue = `${TwinAction}`;
 export interface TwinAuthorizationContext { callerDid: string; ownerDid?: string; stewardDid?: string; grants: TwinRoleGrant[] }
@@ -18,8 +19,8 @@ export interface TwinAuthorizationContext { callerDid: string; ownerDid?: string
 const permissions: Record<string, TwinAction[]> = {
   OWNER: Object.values(TwinAction),
   STEWARD: Object.values(TwinAction),
-  OPERATOR: [TwinAction.PublishState, TwinAction.EmitBusinessEvent],
-  MAINTAINER: [TwinAction.PublishState, TwinAction.AddDataset, TwinAction.EmitMaintenanceEvent],
+  OPERATOR: [TwinAction.PublishState, TwinAction.EmitBusinessEvent, TwinAction.ExecuteCommand],
+  MAINTAINER: [TwinAction.PublishState, TwinAction.AddDataset, TwinAction.EmitMaintenanceEvent, TwinAction.ExecuteCommand],
   DATA_PROVIDER: [TwinAction.PublishState, TwinAction.AddDataset],
   MODEL_PROVIDER: [TwinAction.AddModel],
   SERVICE_PROVIDER: [TwinAction.AddInterface],

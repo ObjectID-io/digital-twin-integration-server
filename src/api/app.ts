@@ -31,6 +31,8 @@ import { ObjectIdTwinIndexer } from "../indexer/objectid.js";
 import type { PaginationOptions } from "../indexer/types.js";
 import { validateCompositionInput, validateIdentifierMappingInput, validateInterfaceInput } from "../twin/standardsValidation.js";
 import { TwinRealtimeHub } from "../realtime/hub.js";
+import { CommandService } from "../commands/service.js";
+import { StorageRetentionService } from "../storage/retention.js";
 import {
   policyDenied, queueDepth, registry as metricsRegistry, requestsTotal, requestDuration, threadFailures,
 } from "../health/metrics.js";
@@ -100,6 +102,8 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   );
   const auth = createAuthProvider(config, credentials);
   const realtime = new TwinRealtimeHub();
+  const commands = new CommandService(config.commands, connectors.get("mqtt"));
+  const retention = new StorageRetentionService(config.retention, storage, objectid);
 
   app.get("/health", (_request, response) => response.json({ status: "ok", stateless: true, timestamp: new Date().toISOString() }));
   app.get("/ready", async (_request, response, next) => {
@@ -131,7 +135,10 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   api.get("/capabilities", (_request, response) => response.json({
     apiVersion: "v1",
     realtime: { supported: true, transport: "sse", encryptedPayloadPassthrough: true },
+    commands: commands.capabilities(),
+    retention: { enabled: config.retention.enabled, defaultDays: config.retention.defaultDays, ownerPolicySource: "configuration", slaReady: true },
   }));
+  api.get("/storage/retention/status", (_request, response) => response.set("Cache-Control", "no-store").json(retention.status()));
   api.get("/twins/:id/realtime/status", async (request, response, next) => {
     try {
       const latest = realtime.latest(request.params.id!);
@@ -170,6 +177,31 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     const unsubscribe = realtime.subscribe(twinId, (event) => send("telemetry", event));
     const heartbeat = setInterval(() => response.write(": heartbeat\n\n"), 20_000);
     request.on("close", () => { clearInterval(heartbeat); unsubscribe(); });
+  });
+  api.get("/twins/:id/command-catalog", async (request, response, next) => {
+    try {
+      await authorize(request, request.params.id!, TwinAction.ExecuteCommand);
+      response.set("Cache-Control", "no-store").json(commands.catalog(request.params.id!));
+    } catch (error) { next(error); }
+  });
+  api.get("/twins/:id/commands", async (request, response, next) => {
+    try {
+      await authorize(request, request.params.id!, TwinAction.ExecuteCommand);
+      response.set("Cache-Control", "no-store").json(await commands.list(request.params.id!, Number(request.query.limit ?? 50)));
+    } catch (error) { next(error); }
+  });
+  api.post("/twins/:id/commands", async (request, response, next) => {
+    try {
+      const twinId = request.params.id!;
+      await authorize(request, twinId, TwinAction.ExecuteCommand);
+      response.status(202).set("Cache-Control", "no-store").json(await commands.create(twinId, callerDid(request, config), request.body));
+    } catch (error) { next(error); }
+  });
+  api.get("/twins/:id/commands/:commandId", async (request, response, next) => {
+    try {
+      await authorize(request, request.params.id!, TwinAction.ExecuteCommand);
+      response.set("Cache-Control", "no-store").json(await commands.get(request.params.id!, request.params.commandId!));
+    } catch (error) { next(error); }
   });
   api.get("/dids/:did/twins", async (request, response, next) => { try { response.json(await twins.findTwinsByDid(request.params.did!)); } catch (error) { next(error); } });
   api.get("/twins/:id", async (request, response, next) => { try { response.json(await twins.getTwin(request.params.id!)); } catch (error) { next(error); } });
@@ -291,6 +323,8 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       await objectid.initialize?.();
       const resolved = await resolveCredentialReferences(config.connectors, credentials);
       await connectors.start(resolved as AppConfig["connectors"]);
+      await commands.start();
+      retention.start();
     },
     async startConnectorIngestion() {
       worker.start();
@@ -306,6 +340,8 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       await Promise.allSettled(subscriptions.splice(0).map((subscription) => subscription.close()));
       await withTimeout(aggregator.close(), config.dataset.aggregation.shutdownFlushTimeoutMs);
       await worker.stop();
+      await retention.stop();
+      await commands.stop();
       await connectors.stop();
       await indexer.close();
       await idempotency.close();
@@ -327,7 +363,8 @@ function threadOptions(query: Record<string, unknown>): PaginationOptions {
 
 function callerDid(request: express.Request, config: AppConfig) {
   const claims = request.auth?.claims;
-  return String(claims?.did ?? claims?.sub ?? config.security.serviceDid ?? request.auth?.subject ?? "");
+  const delegated = request.header("x-objectid-caller-did");
+  return String(claims?.did ?? (config.security.authMode !== "disabled" ? delegated : undefined) ?? claims?.sub ?? config.security.serviceDid ?? request.auth?.subject ?? "");
 }
 
 function isMaintenanceEvent(body: any) {

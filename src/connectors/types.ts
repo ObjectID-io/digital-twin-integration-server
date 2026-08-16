@@ -6,6 +6,7 @@ export interface TwinConnector {
   read(input: unknown): Promise<unknown>;
   write?(input: unknown): Promise<void>;
   subscribe?(handler: (data: unknown) => Promise<void> | void): Promise<Subscription>;
+  subscribeTo?(topic: string, handler: (data: unknown) => Promise<void> | void, qos?: 0 | 1 | 2): Promise<Subscription>;
   healthCheck(): Promise<HealthStatus>;
   disconnect(): Promise<void>;
 }

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rm, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { basename, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -22,7 +22,11 @@ export class LocalFilesystemStorageProvider implements StorageProvider {
     const original = safeSegment(input.fileName ? basename(input.fileName) : undefined, "object.bin");
     const path = resolve(directory, `${digest}-${original}`);
     this.assertWithinRoot(path);
-    await writeFile(path, bytes, { flag: "wx" }).catch((error: any) => { if (error?.code !== "EEXIST") throw error; });
+    await writeFile(path, bytes, { flag: "wx" }).catch(async (error: any) => {
+      if (error?.code !== "EEXIST") throw error;
+      const now = new Date();
+      await utimes(path, now, now);
+    });
     return {
       uri: this.uriFor(path), hash, hashAlgorithm: "sha256" as const, size: bytes.byteLength, contentType: input.contentType,
     };
@@ -30,7 +34,30 @@ export class LocalFilesystemStorageProvider implements StorageProvider {
 
   async read(uri: string) { return readFile(this.pathFor(uri)); }
   async exists(uri: string) { try { await access(this.pathFor(uri)); return true; } catch { return false; } }
-  async delete(uri: string) { await unlink(this.pathFor(uri)); }
+  async delete(uri: string) { await unlink(this.pathFor(uri)).catch((error: any) => { if (error?.code !== "ENOENT") throw error; }); }
+
+  async listManagedObjects() {
+    const twinsRoot = resolve(this.root, "twins");
+    this.assertWithinRoot(twinsRoot);
+    const output: Array<{ uri: string; twinId: string; category: string; createdAt: string; size: number }> = [];
+    let twinEntries;
+    try { twinEntries = await readdir(twinsRoot, { withFileTypes: true }); } catch (error: any) { if (error?.code === "ENOENT") return output; throw error; }
+    for (const twinEntry of twinEntries) {
+      if (!twinEntry.isDirectory() || twinEntry.name === "unscoped") continue;
+      const twinPath = resolve(twinsRoot, twinEntry.name); this.assertWithinRoot(twinPath);
+      for (const categoryEntry of await readdir(twinPath, { withFileTypes: true })) {
+        if (!categoryEntry.isDirectory()) continue;
+        const categoryPath = resolve(twinPath, categoryEntry.name); this.assertWithinRoot(categoryPath);
+        for (const fileEntry of await readdir(categoryPath, { withFileTypes: true })) {
+          if (!fileEntry.isFile()) continue;
+          const path = resolve(categoryPath, fileEntry.name); this.assertWithinRoot(path);
+          const details = await stat(path);
+          output.push({ uri: this.uriFor(path), twinId: twinEntry.name, category: categoryEntry.name, createdAt: details.mtime.toISOString(), size: details.size });
+        }
+      }
+    }
+    return output;
+  }
 
   async healthCheck() {
     try {

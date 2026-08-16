@@ -18,12 +18,21 @@ export interface StoredObject {
   contentType?: string;
 }
 
+export interface ManagedStoredObject {
+  uri: string;
+  twinId: string;
+  category: string;
+  createdAt: string;
+  size?: number;
+}
+
 export interface StorageProvider {
   readonly type: string;
   store(input: StoreInput): Promise<StoredObject>;
   read?(uri: string): Promise<Buffer | Readable>;
   exists?(uri: string): Promise<boolean>;
   delete?(uri: string): Promise<void>;
+  listManagedObjects?(): Promise<ManagedStoredObject[]>;
   healthCheck(): Promise<HealthStatus>;
   supportsUri?(uri: string): boolean;
 }
@@ -61,4 +70,13 @@ export interface StorageConfig {
   defaultProvider: string;
   providers: Record<string, StorageProviderConfig>;
   routes: Record<string, string>;
+}
+
+export interface RetentionConfig {
+  enabled: boolean;
+  defaultDays: number;
+  intervalMs: number;
+  startupDelayMs: number;
+  maxDeletesPerRun: number;
+  ownerPolicies: Array<{ ownerDid: string; retentionDays: number | null }>;
 }

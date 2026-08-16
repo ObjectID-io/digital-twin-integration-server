@@ -40,7 +40,19 @@ export class MqttConnector implements TwinConnector {
   async read() { throw new AppError("MQTT_READ_UNSUPPORTED", "Use subscribe for MQTT reads", 405, "CONNECTOR"); }
   async write(input: any) {
     if (!this.client?.connected) throw new AppError("MQTT_NOT_CONNECTED", "MQTT connector is unavailable", 503, "CONNECTOR");
-    await this.client.publishAsync(String(input.topic), typeof input.payload === "string" ? input.payload : JSON.stringify(input.payload), { qos: input.qos ?? 0 });
+    await this.client.publishAsync(String(input.topic), typeof input.payload === "string" ? input.payload : JSON.stringify(input.payload), { qos: input.qos ?? 0, retain: input.retain === true });
+  }
+  async subscribeTo(topicFilter: string, handler: (data: unknown) => Promise<void> | void, qos: 0 | 1 | 2 = 1): Promise<Subscription> {
+    if (!this.client) throw new AppError("MQTT_NOT_CONNECTED", "MQTT connector is unavailable", 503, "CONNECTOR");
+    await this.client.subscribeAsync(topicFilter, { qos });
+    const listener = (topic: string, payload: Buffer) => {
+      if (!mqttMatch(topicFilter, topic)) return;
+      let value: unknown = payload.toString();
+      try { value = JSON.parse(payload.toString()); } catch { /* raw response is ignored by the command service */ }
+      Promise.resolve(handler({ topic, value, observedAt: Date.now() })).catch(() => undefined);
+    };
+    this.client.on("message", listener);
+    return { close: async () => { this.client?.off("message", listener); await this.client?.unsubscribeAsync(topicFilter); } };
   }
   async subscribe(handler: (data: unknown) => Promise<void> | void): Promise<Subscription> {
     if (!this.client) throw new AppError("MQTT_NOT_CONNECTED", "MQTT connector is unavailable", 503, "CONNECTOR");

@@ -54,6 +54,41 @@ connectors:
   modbus:
     enabled: false
 
+commands:
+  enabled: true
+  storeFile: /data/commands.json
+  requestTopicTemplate: objectid/twins/{twinId}/commands/request
+  resultTopic: objectid/twins/+/commands/+/result
+  catalogs:
+    - twinId: "0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b"
+      interfaceId: urn:objectid:interface:simulator-control:v1
+      commands:
+        - name: pauseSimulation
+          version: "1.0"
+          description: Pause periodic demo telemetry publication.
+          riskClass: operational
+          timeoutSeconds: 30
+          parametersSchema: { type: object, additionalProperties: false }
+        - name: resumeSimulation
+          version: "1.0"
+          description: Resume periodic demo telemetry publication.
+          riskClass: operational
+          timeoutSeconds: 30
+          parametersSchema: { type: object, additionalProperties: false }
+        - name: setSimulationScenario
+          version: "1.0"
+          description: Select a non-safety demo machine scenario.
+          riskClass: operational
+          timeoutSeconds: 30
+          parametersSchema:
+            type: object
+            required: [scenario]
+            additionalProperties: false
+            properties:
+              scenario:
+                type: string
+                enum: [normal, overheat, high-vibration, spindle-overload, pressure-loss]
+
 security:
   credentialProvider: file
   credentialFile: /run/secrets/dtis_credentials
@@ -108,3 +143,11 @@ storage:
     evidence: backblaze
     artifact: backblaze
     event-payload: backblaze
+
+retention:
+  enabled: true
+  defaultDays: 5
+  intervalMs: 3600000
+  startupDelayMs: 60000
+  maxDeletesPerRun: 500
+  ownerPolicies: []

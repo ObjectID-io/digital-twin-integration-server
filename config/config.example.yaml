@@ -42,6 +42,29 @@ connectors:
   modbus:
     enabled: false
 
+commands:
+  enabled: false
+  storeFile: ./data/commands.json
+  requestTopicTemplate: objectid/twins/{twinId}/commands/request
+  resultTopic: objectid/twins/+/commands/+/result
+  catalogs:
+    - twinId: "0xreplace"
+      interfaceId: urn:objectid:interface:machine-control:v1
+      commands:
+        - name: setOperatingMode
+          version: "1.0"
+          description: Change the operational mode; this is not a safety function.
+          riskClass: operational
+          timeoutSeconds: 30
+          parametersSchema:
+            type: object
+            required: [mode]
+            additionalProperties: false
+            properties:
+              mode:
+                type: string
+                enum: [automatic, manual, maintenance]
+
 security:
   credentialProvider: environment
   authMode: disabled
@@ -92,3 +115,14 @@ storage:
     evidence: local
     artifact: local
     event-payload: local
+
+retention:
+  enabled: true
+  defaultDays: 5
+  intervalMs: 3600000
+  startupDelayMs: 60000
+  maxDeletesPerRun: 500
+  ownerPolicies:
+    # SLA-ready owner override. null means keep indefinitely.
+    - ownerDid: did:iota:testnet:0xreplace
+      retentionDays: 30

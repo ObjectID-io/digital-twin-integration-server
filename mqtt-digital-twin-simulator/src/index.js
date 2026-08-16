@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import mqtt from "mqtt";
 import { createTelemetry } from "./telemetry.js";
 import { createControlServer } from "./control-server.js";
+import { executeSimulatorCommand } from "./commands.js";
 
 const config = {
   mqttUrl: process.env.MQTT_URL ?? "mqtt://mosquitto:1883",
@@ -15,6 +16,7 @@ const config = {
   machineName: process.env.SIM_MACHINE_NAME ?? "mqtt-digital-twin",
   healthPort: integer("HEALTH_PORT", 8081, 1, 65535)
 };
+config.commandTopic = process.env.SIM_COMMAND_TOPIC ?? `objectid/twins/${config.assetId}/commands/request`;
 
 const status = {
   connected: false,
@@ -38,6 +40,7 @@ let sequence = 0;
 let timer;
 let publishing = false;
 const control = { scenario: "normal", paused: false, changedAt: new Date().toISOString() };
+const processedCommands = new Set();
 
 client.on("connect", () => {
   status.connected = true;
@@ -45,7 +48,10 @@ client.on("connect", () => {
   log("mqtt_connected", { url: config.mqttUrl, topic: config.topic });
   void publishSample();
   timer ??= setInterval(() => void publishSample(), config.intervalMs);
+  void client.subscribeAsync(config.commandTopic, { qos: 1 });
 });
+
+client.on("message", (_topic, payload) => void handleCommand(payload));
 
 client.on("offline", () => { status.connected = false; });
 client.on("close", () => { status.connected = false; });
@@ -96,6 +102,25 @@ async function publishStateTransition({ from, to }) {
   await client.publishAsync(config.stateTopic, JSON.stringify(transition), { qos: config.qos, retain: false });
   status.lastTransitionAt = sample.observedAt;
   log("fault_transition_published", { from, to, topic: config.stateTopic, sequence });
+}
+
+async function handleCommand(payload) {
+  let request;
+  try { request = JSON.parse(payload.toString()); } catch { return; }
+  const commandId = String(request?.commandId ?? "");
+  if (!commandId || processedCommands.has(commandId) || request?.twinId !== config.assetId) return;
+  processedCommands.add(commandId);
+  if (processedCommands.size > 1000) processedCommands.delete(processedCommands.values().next().value);
+  const uuid = commandId.replace(/^urn:uuid:/, "");
+  const resultTopic = `objectid/twins/${config.assetId}/commands/${uuid}/result`;
+  try {
+    await client.publishAsync(resultTopic, JSON.stringify({ specVersion: "objectid.command-result.v1", commandId, twinId: config.assetId, status: "accepted", acceptedAt: new Date().toISOString() }), { qos: 1, retain: false });
+    const result = executeSimulatorCommand(control, request);
+    await client.publishAsync(resultTopic, JSON.stringify({ specVersion: "objectid.command-result.v1", commandId, twinId: config.assetId, status: "succeeded", completedAt: new Date().toISOString(), result }), { qos: 1, retain: false });
+    log("command_succeeded", { commandId, command: request.command?.name, result });
+  } catch (error) {
+    await client.publishAsync(resultTopic, JSON.stringify({ specVersion: "objectid.command-result.v1", commandId, twinId: config.assetId, status: "failed", completedAt: new Date().toISOString(), error: { code: "SIMULATOR_COMMAND_FAILED", message: error.message } }), { qos: 1, retain: false });
+  }
 }
 
 async function shutdown(signal) {

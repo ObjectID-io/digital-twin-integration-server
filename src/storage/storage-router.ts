@@ -36,6 +36,10 @@ export class StorageRouter implements StorageProvider {
     await provider.delete(uri);
   }
 
+  async listManagedObjects() {
+    return (await Promise.all([...this.providers.values()].map((provider) => provider.listManagedObjects?.() ?? Promise.resolve([])))).flat();
+  }
+
   async health() {
     const statuses = Object.fromEntries(await Promise.all([...this.providers].map(async ([name, provider]) => [name, await provider.healthCheck()])));
     const required = new Set([this.config.defaultProvider, ...Object.values(this.config.routes)]);

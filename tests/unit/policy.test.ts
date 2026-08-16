@@ -9,6 +9,10 @@ describe("local role policy", () => {
     expect(policy.assertAllowed({ callerDid: "did:owner", ownerDid: "did:owner", grants: [] }, "modify_composition")).toBe(true);
     expect(policy.assertAllowed({ callerDid: "did:steward", stewardDid: "did:steward", grants: [] }, "add_model")).toBe(true);
   });
+  it("allows operators to execute catalog commands but denies view-only callers", () => {
+    expect(policy.assertAllowed({ callerDid: "did:operator", grants: [{ subjectDid: "did:operator", roleType: "OPERATOR" }] }, "execute_command")).toBe(true);
+    expect(() => policy.assertAllowed({ callerDid: "did:pinned", grants: [] }, "execute_command")).toThrowError(/denies/);
+  });
   it("denies unrelated, expired, and auditor callers", () => {
     expect(() => policy.assertAllowed({ callerDid: "did:x", ownerDid: "did:owner", grants: [] }, "publish_state")).toThrow();
     expect(() => policy.assertAllowed({ callerDid: "did:x", grants: [{ subjectDid: "did:x", roleType: "DATA_PROVIDER", validTo: 99 }] }, "publish_state", 100)).toThrow();

@@ -22,6 +22,7 @@ describe("storage providers", () => {
       expect(stored.uri).toMatch(/^nas:\/\/factory\/objectid\/twins\/0xtwin\/models\//);
       expect(await provider.read(stored.uri)).toEqual(bytes);
       expect(await provider.exists(stored.uri)).toBe(true);
+      expect(await provider.listManagedObjects()).toEqual([expect.objectContaining({ uri: stored.uri, twinId: "0xtwin", category: "models", size: 5 })]);
       expect((await provider.healthCheck()).healthy).toBe(true);
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
@@ -40,6 +41,19 @@ describe("storage providers", () => {
     expect(command.input.Key).toMatch(/^customer\/twins\/0xtwin\/datasets\/.+-window.json$/);
     expect(stored.uri).toBe(`s3://twins/${command.input.Key}`);
     expect(stored.hash).toBe(`sha256:${createHash("sha256").update(bytes).digest("hex")}`);
+  });
+
+  it("paginates only the managed S3 Twin namespace for retention", async () => {
+    const send = vi.fn(async (command: any) => command.constructor.name === "ListObjectsV2Command" ? {
+      Contents: [{ Key: "customer/twins/0xtwin/datasets/hash-window.json", LastModified: new Date("2026-08-01T00:00:00Z"), Size: 42 }],
+      IsTruncated: false,
+    } : {});
+    const provider = new S3StorageProvider(
+      { type: "s3", region: "local", bucket: "twins", prefix: "customer/" },
+      new EnvironmentCredentialProvider({}), { send },
+    );
+    expect(await provider.listManagedObjects()).toEqual([{ uri: "s3://twins/customer/twins/0xtwin/datasets/hash-window.json", twinId: "0xtwin", category: "datasets", createdAt: "2026-08-01T00:00:00.000Z", size: 42 }]);
+    expect((send.mock.calls[0]![0] as any).input.Prefix).toBe("customer/twins/");
   });
 
   it("routes dataset and model categories to different providers", async () => {

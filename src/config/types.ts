@@ -1,5 +1,6 @@
 export type AuthMode = "disabled" | "api-key" | "jwt";
-import type { StorageConfig } from "../storage/types.js";
+import type { RetentionConfig, StorageConfig } from "../storage/types.js";
+import type { CommandConfig } from "../commands/types.js";
 
 export interface AppConfig {
   server: { host: string; port: number; bodyLimitBytes: number; trustProxy: boolean };
@@ -21,6 +22,7 @@ export interface AppConfig {
   };
   profiles: { directory: string };
   connectors: Record<string, { enabled: boolean; [key: string]: unknown }>;
+  commands: CommandConfig;
   security: {
     credentialProvider: "environment" | "file";
     credentialFile?: string;
@@ -39,4 +41,5 @@ export interface AppConfig {
     aggregation: { enabled: boolean; defaultWindowSeconds: number; shutdownFlushTimeoutMs: number };
   };
   storage: StorageConfig;
+  retention: RetentionConfig;
 }

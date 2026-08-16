@@ -17,6 +17,7 @@ export function testConfig(overrides: TestOverrides = {}): AppConfig {
     objectid: { network: "testnet", rpcUrl: "http://localhost", packageId: "0xpackage", timeoutMs: 1000 },
     profiles: { directory: "./profiles" },
     connectors: { rest: { enabled: true }, mqtt: { enabled: false } },
+    commands: { enabled: false, storeFile: "./data/test/commands.json", requestTopicTemplate: "objectid/twins/{twinId}/commands/request", resultTopic: "objectid/twins/+/commands/+/result", catalogs: [] },
     security: { credentialProvider: "environment", authMode: "disabled", apiKeyCredential: "DTIS_API_KEY", jwtSecretCredential: "DTIS_JWT_SECRET", rateLimitPerMinute: 1000 },
     cache: { type: "memory", ttlMs: 60_000 },
     policy: { cacheTtlMs: 1_000 },
@@ -24,6 +25,7 @@ export function testConfig(overrides: TestOverrides = {}): AppConfig {
     idempotency: { provider: "memory", ttlMs: 60_000 },
     dataset: { directory: "./data/test", aggregation: { enabled: true, defaultWindowSeconds: 300, shutdownFlushTimeoutMs: 1_000 } },
     storage: { defaultProvider: "local", providers: { local: { type: "filesystem", basePath: "./data/test", uriPrefix: "file://" } }, routes: {} },
+    retention: { enabled: false, defaultDays: 5, intervalMs: 3_600_000, startupDelayMs: 60_000, maxDeletesPerRun: 500, ownerPolicies: [] },
   };
   const localProvider = base.storage.providers.local;
   if (localProvider?.type !== "filesystem") throw new Error("Test local storage must be filesystem");

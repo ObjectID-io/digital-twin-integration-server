@@ -112,6 +112,7 @@ services:
       DTIS_CACHE_TTL_MS: "15000"
     volumes:
       - ./config/config.vps-testnet.yaml:/config/config.yaml:ro
+      - command-data:/data
     secrets:
       - dtis_credentials
     read_only: true
@@ -176,6 +177,7 @@ volumes:
   mosquitto-config:
   mosquitto-data:
   redis-data:
+  command-data:
 
 networks:
   default:

@@ -1,5 +1,29 @@
 # Off-Chain Storage
 
+## Automatic Retention And Pruning
+
+The Integration Server automatically prunes managed objects after five days by default. Only objects inside a configured provider's `twins/{twinId}/{category}` namespace are eligible. External URIs and unscoped objects are never enumerated.
+
+```yaml
+retention:
+  enabled: true
+  defaultDays: 5
+  intervalMs: 3600000
+  startupDelayMs: 60000
+  maxDeletesPerRun: 500
+  ownerPolicies:
+    - ownerDid: did:iota:testnet:0xPREMIUM_OWNER
+      retentionDays: 30
+    - ownerDid: did:iota:testnet:0xARCHIVE_OWNER
+      retentionDays: null
+```
+
+The current on-chain Twin owner is resolved before deletion. If the Twin or owner cannot be resolved, pruning fails closed and preserves the object. `retentionDays: null` keeps data indefinitely. `ownerPolicies` is the initial policy source and implements the resolver boundary intended for the future Service Level Agreement service.
+
+The oldest eligible objects are deleted first, with a bounded number of deletions per run. Status and the most recent result are available from `GET /api/v1/storage/retention/status`.
+
+Pruning removes the off-chain bytes, not the immutable ObjectID/IOTA record. The URI and hash remain as historical integrity evidence, but payload retrieval will return unavailable after retention expires.
+
 ## Architecture
 
 The Integration Server stores content through a generic `StorageProvider` and
@@ -142,5 +166,6 @@ and replication as appropriate.
 External storage does not make the Integration Server stateful. Multiple server
 replicas can use the same provider, and a replacement instance can reconstruct
 the Twin from ObjectID and access the same storage without migrating local
-server state. Atomic overwrite or retention policies are provider concerns;
-content-addressed object names reduce collision risk.
+server state. Content-addressed object names reduce collision risk; automatic
+retention remains an Integration Server policy while provider lifecycle rules
+must be configured not to delete data earlier than that policy.

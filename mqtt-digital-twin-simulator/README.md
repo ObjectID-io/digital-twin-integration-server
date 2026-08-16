@@ -16,6 +16,9 @@ The default topic is `objectid/twins/telemetry/dataset`. Samples are emitted eve
 | `SIM_ASSET_ID` | `unknown` | Object ID included in each sample. |
 | `SIM_MACHINE_NAME` | `mqtt-digital-twin` | Simulated machine name. |
 | `SIM_STATE_TOPIC` | `objectid/twins/telemetry/state` | Topic used once per fault transition to create an on-chain State Published event. |
+| `SIM_COMMAND_TOPIC` | `objectid/twins/{SIM_ASSET_ID}/commands/request` | Signed operational commands dispatched by the Integration Server. |
+
+The simulator implements `pauseSimulation`, `resumeSimulation` and `setSimulationScenario`. It publishes accepted/final envelopes to `objectid/twins/{twinId}/commands/{commandId}/result` and rejects `emergency-stop` through this non-safety channel.
 
 To publish on-chain state updates instead, set `SIM_MQTT_TOPIC=objectid/twins/telemetry/state`. Each processed state can consume an OID Credit, so use a suitably long interval.
 

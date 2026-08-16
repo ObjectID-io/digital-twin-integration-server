@@ -143,6 +143,20 @@ Helmet headers, API key/JWT/disabled auth providers, body limits, rate limits,
 secret-redacted structured logs, non-root container and typed errors are
 enabled. Terminate TLS in an ingress/reverse proxy or inject an HTTPS listener.
 
+## Signed Twin commands
+
+The optional command plane dispatches only allowlisted operational commands. Enable `commands` in the YAML configuration, define a JSON Schema catalog for each Twin, and enable the MQTT connector. Requests are persisted in `commands.storeFile`, published with QoS 1 and `retain=false`, then updated from:
+
+```text
+objectid/twins/{twinId}/commands/{commandId}/result
+```
+
+The HTTP API exposes the catalog and command history under `/api/v1/twins/{id}/commands`. Owner, steward, operator or maintainer authority is checked before dispatch. Safety-relevant commands are rejected: this channel is not an emergency-stop or certified safety function.
+
+## Storage retention
+
+Managed datasets, models, evidence and event payloads are pruned automatically after five days by default. The current Twin owner is resolved before deletion and can receive a longer or indefinite policy through `retention.ownerPolicies`. Unresolved ownership fails closed. The policy resolver is designed to be replaced by the future ObjectID SLA resolver without changing storage providers or pruning logic. See `docs/STORAGE.md`.
+
 ## API
 
 The API is versioned under `/api/v1`. Mutations accept `Idempotency-Key`.
