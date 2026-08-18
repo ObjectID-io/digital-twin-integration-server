@@ -34,11 +34,18 @@ export function errorBody(error: unknown) {
 
 export function mapObjectIdError(error: unknown): AppError {
   const message = error instanceof Error ? error.message : String(error);
+  const abortCode = moveAbortCode(message);
   if (/insufficient gas/i.test(message)) {
     return new AppError("IOTA_INSUFFICIENT_GAS", message, 503, "OBJECTID", { retryable: false });
   }
-  if (/credit|balance|insufficient/i.test(message)) {
-    return new AppError("OBJECTID_INSUFFICIENT_CREDIT", message, 402, "CREDIT");
+  if ([19, 20, 21].includes(abortCode) || /subscription.*(inactive|expired|not started)|E_SUBSCRIPTION_(INACTIVE|EXPIRED|NOT_STARTED)/i.test(message)) {
+    return new AppError("OBJECTID_SUBSCRIPTION_INACTIVE", message, 403, "CREDIT");
+  }
+  if (abortCode === 22 || /subscription.*credit|credit.*exhausted|E_SUBSCRIPTION_CREDIT_EXHAUSTED|insufficient.*credit/i.test(message)) {
+    return new AppError("OBJECTID_SUBSCRIPTION_CREDIT_EXHAUSTED", message, 402, "CREDIT");
+  }
+  if (abortCode === 23 || /twin.*limit|E_TWIN_LIMIT_REACHED/i.test(message)) {
+    return new AppError("OBJECTID_SUBSCRIPTION_TWIN_LIMIT", message, 409, "CREDIT");
   }
   if (/authori[sz]|controllercap|not allowed/i.test(message)) {
     return new AppError("OBJECTID_NOT_AUTHORIZED", message, 403, "AUTHORIZATION");
@@ -48,4 +55,9 @@ export function mapObjectIdError(error: unknown): AppError {
     return new AppError("OBJECTID_TEMPORARY_FAILURE", message, 503, "NETWORK", { retryable: true, submissionUnknown });
   }
   return new AppError("OBJECTID_OPERATION_FAILED", message, 502, "OBJECTID");
+}
+
+function moveAbortCode(message: string) {
+  const match = message.match(/MoveAbort\([\s\S]*?oid_twin[\s\S]*?,\s*(\d+)\s*\)/i);
+  return match ? Number(match[1]) : -1;
 }

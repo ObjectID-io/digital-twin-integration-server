@@ -14,10 +14,14 @@ export interface AppConfig {
       seedCredential: string;
       addressCredential: string;
       controllerCapCredential: string;
-      creditPolicyCredential: string;
-      creditTokenCredential: string;
+      subscriptionCredential: string;
       clockId: string;
       gasBudget: number;
+      gasStations: Array<{
+        url: string;
+        tokenCredential: string;
+        reserveDurationSeconds?: number;
+      }>;
     };
   };
   profiles: { directory: string };

@@ -52,6 +52,7 @@ function applyEnvironment(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig 
   if (env.DTIS_OBJECTID_NETWORK) next.objectid.network = env.DTIS_OBJECTID_NETWORK;
   if (env.DTIS_OBJECTID_RPC_URL) next.objectid.rpcUrl = env.DTIS_OBJECTID_RPC_URL;
   if (env.DTIS_OBJECTID_PACKAGE_ID) next.objectid.packageId = env.DTIS_OBJECTID_PACKAGE_ID;
+  if (env.DTIS_SUBSCRIPTION_ACCOUNT_ID && next.objectid.signer) next.objectid.signer.subscriptionCredential = "DTIS_SUBSCRIPTION_ACCOUNT_ID";
   if (env.DTIS_PROFILES_DIRECTORY) next.profiles.directory = env.DTIS_PROFILES_DIRECTORY;
   if (env.DTIS_AUTH_MODE) next.security.authMode = env.DTIS_AUTH_MODE as AppConfig["security"]["authMode"];
   if (env.DTIS_CREDENTIAL_PROVIDER) next.security.credentialProvider = env.DTIS_CREDENTIAL_PROVIDER as "environment" | "file";
@@ -115,6 +116,19 @@ export async function loadConfig(path = process.env.DTIS_CONFIG ?? "./config/con
   }
   if (!Number.isInteger(config.cache.ttlMs) || config.cache.ttlMs < 1) {
     throw new AppError("CONFIG_INVALID_CACHE_TTL", "cache.ttlMs must be a positive integer", 500, "VALIDATION");
+  }
+  if (config.objectid.signer?.enabled) {
+    if (!config.objectid.signer.subscriptionCredential) {
+      throw new AppError("CONFIG_SUBSCRIPTION_CREDENTIAL_REQUIRED", "The IOTA signer requires subscriptionCredential", 500, "VALIDATION");
+    }
+    if (!config.objectid.signer.gasStations?.length) {
+      throw new AppError("CONFIG_GAS_STATION_REQUIRED", "At least one ObjectID Gas Station is required", 500, "VALIDATION");
+    }
+    for (const station of config.objectid.signer.gasStations) {
+      if (!/^https:\/\//i.test(station.url) || !station.tokenCredential) {
+        throw new AppError("CONFIG_GAS_STATION_INVALID", "Gas Station entries require an HTTPS URL and tokenCredential", 500, "VALIDATION");
+      }
+    }
   }
   if (config.commands.enabled && !config.connectors.mqtt?.enabled) {
     throw new AppError("CONFIG_COMMANDS_MQTT_REQUIRED", "commands.enabled requires the MQTT connector", 500, "VALIDATION");

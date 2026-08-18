@@ -79,9 +79,11 @@ and WebSocket are plugin-ready but **not implemented**.
 
 ## ObjectID Integration
 
-`ProviderObjectIdAdapter` hides provider details, uses ObjectID owner/type
-queries for reads and delegates mutations to Digital Twin SDK methods. It does
-not create an alternative Credit model; ObjectID/Move remains authoritative.
+`ProviderObjectIdAdapter` hides provider details and uses ObjectID owner/type
+queries for reads. When the signer is enabled, every Twin mutation uses the
+published subscription ABI directly and is sponsored by the configured
+ObjectID Gas Stations. The shared `SubscriptionAccount` remains the
+authoritative source for plan, Twin limit and monthly operation usage.
 
 ## Digital Thread
 
@@ -157,12 +159,14 @@ MQTT command requests can additionally be authenticated at the device boundary. 
 
 ## Storage retention
 
-Managed datasets, models, evidence and event payloads are pruned automatically after five days by default. The current Twin owner is resolved before deletion and can receive a longer or indefinite policy through `retention.ownerPolicies`. Unresolved ownership fails closed. The policy resolver is designed to be replaced by the future ObjectID SLA resolver without changing storage providers or pruning logic. See `docs/STORAGE.md`.
+Managed datasets, models, evidence and event payloads are pruned automatically after 30 days in the hosted VPS configuration (five days remains the generic development default). The current Twin owner is resolved before deletion and can receive a longer or indefinite policy through `retention.ownerPolicies`. Unresolved ownership fails closed. The policy resolver is designed to be replaced by the future ObjectID SLA resolver without changing storage providers or pruning logic. See `docs/STORAGE.md`.
 
 ## API
 
 The API is versioned under `/api/v1`. Mutations accept `Idempotency-Key`.
 Errors use `{ error: { code, message, category, details } }`.
+`GET /api/v1/subscription` exposes the configured plan, period, Twin usage and
+monthly operation-credit usage directly from the shared on-chain account.
 
 ## Development
 

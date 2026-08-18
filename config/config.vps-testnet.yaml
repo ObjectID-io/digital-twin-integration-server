@@ -7,17 +7,23 @@ server:
 objectid:
   network: testnet
   rpcUrl: https://api.testnet.iota.cafe
-  packageId: "0x8228c5a214d4e7d8a194090fd70d31ab9b000e5bfdb5f4fb558e042db145d835"
+  packageId: "0x2b20f39e5e954b232370b019d21c7cc87ff41e7ee0a7802b9a47be14059e1772"
   timeoutMs: 30000
   signer:
     enabled: true
     seedCredential: DTIS_IOTA_SEED
     addressCredential: DTIS_SIGNER_ADDRESS
     controllerCapCredential: DTIS_TWIN_CONTROLLER_CAP_ID
-    creditPolicyCredential: DTIS_OID_CREDIT_POLICY_ID
-    creditTokenCredential: DTIS_OID_CREDIT_TOKEN_ID
+    subscriptionCredential: DTIS_SUBSCRIPTION_ACCOUNT_ID
     clockId: "0x6"
     gasBudget: 100000000
+    gasStations:
+      - url: https://gas1.objectid.io
+        tokenCredential: DTIS_GAS_STATION_1_TOKEN
+        reserveDurationSeconds: 30
+      - url: https://gas2.objectid.io
+        tokenCredential: DTIS_GAS_STATION_2_TOKEN
+        reserveDurationSeconds: 30
 
 profiles:
   directory: /profiles
@@ -62,7 +68,7 @@ commands:
   signingKeyFile: /run/secrets/command_signing_key
   signingKeyId: dtis-command-v1
   catalogs:
-    - twinId: "0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b"
+    - twinId: "0xreplace-with-a-twin-created-by-the-new-package"
       interfaceId: urn:objectid:interface:simulator-control:v1
       commands:
         - name: pauseSimulation
@@ -148,7 +154,7 @@ storage:
 
 retention:
   enabled: true
-  defaultDays: 5
+  defaultDays: 30
   intervalMs: 3600000
   startupDelayMs: 60000
   maxDeletesPerRun: 500

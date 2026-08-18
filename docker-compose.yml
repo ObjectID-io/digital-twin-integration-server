@@ -100,7 +100,7 @@ services:
       DTIS_PROFILES_DIRECTORY: /profiles
       DTIS_OBJECTID_NETWORK: testnet
       DTIS_OBJECTID_RPC_URL: https://api.testnet.iota.cafe
-      DTIS_OBJECTID_PACKAGE_ID: 0x8228c5a214d4e7d8a194090fd70d31ab9b000e5bfdb5f4fb558e042db145d835
+      DTIS_OBJECTID_PACKAGE_ID: 0x2b20f39e5e954b232370b019d21c7cc87ff41e7ee0a7802b9a47be14059e1772
       DTIS_CREDENTIAL_PROVIDER: file
       DTIS_CREDENTIAL_FILE: /run/secrets/dtis_credentials
       DTIS_AUTH_MODE: api-key
@@ -113,6 +113,23 @@ services:
     volumes:
       - ./config/config.vps-testnet.yaml:/config/config.yaml:ro
       - command-data:/data
+    networks:
+      - default
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.dtis.rule=Host(`dtis.objectid.io`)"
+      - "traefik.http.routers.dtis.entrypoints=websecure"
+      - "traefik.http.routers.dtis.tls=true"
+      - "traefik.http.routers.dtis.tls.certresolver=myresolver"
+      - "traefik.http.routers.dtis.middlewares=dtis-sec@docker"
+      - "traefik.http.services.dtis.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.dtis-sec.headers.stsSeconds=63072000"
+      - "traefik.http.middlewares.dtis-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.dtis-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.dtis-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.dtis-sec.headers.referrerPolicy=no-referrer"
     secrets:
       - dtis_credentials
       - command_signing_key
@@ -143,7 +160,7 @@ services:
       SIM_STATE_TOPIC: objectid/twins/telemetry/state
       MQTT_QOS: "1"
       SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-5000}
-      SIM_ASSET_ID: ${SIM_ASSET_ID:-0x89004d4d4f57cb97771d7ab0407fb74aeecb5fe1d9112092b4788559beefd86b}
+      SIM_ASSET_ID: ${SIM_ASSET_ID:?set SIM_ASSET_ID to a Twin created by the new package}
       SIM_MACHINE_NAME: ${SIM_MACHINE_NAME:-mqtt-vps-twin}
       SIM_COMMAND_INTERFACE_ID: urn:objectid:interface:simulator-control:v1
       SIM_COMMAND_SIGNING_KEY_FILE: /run/secrets/command_signing_key

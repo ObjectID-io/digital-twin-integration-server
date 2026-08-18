@@ -51,8 +51,27 @@ export interface DidTwinSummary {
   roles: Array<"owner" | "creator" | "steward" | "twin">;
 }
 
+export interface SubscriptionStatus {
+  objectId: string;
+  customerId: string;
+  controllerId: string;
+  plan: { code: number; name: "base" | "advanced" | "pro" | "enterprise" | "unknown" };
+  status: { code: number; name: "active" | "suspended" | "cancelled" | "unknown" };
+  periodStart: string;
+  periodEnd: string;
+  twinLimit: string;
+  activeTwinCount: string;
+  remainingTwins: string;
+  creditLimit: string;
+  creditsUsed: string;
+  remainingCredits: string;
+  current: boolean;
+  updatedAt: string;
+}
+
 export interface ObjectIdAdapter {
   initialize?(): Promise<void>;
+  getSubscription?(): Promise<SubscriptionStatus>;
   isReady(): Promise<boolean>;
   getTwin(id: string): Promise<unknown>;
   findTwinsByDid(did: string): Promise<DidTwinSummary[]>;

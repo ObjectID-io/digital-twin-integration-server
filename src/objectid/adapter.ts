@@ -29,11 +29,16 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
     });
     if (config.objectid.signer?.enabled) {
       if (!credentials) throw new AppError("OBJECTID_SIGNER_CREDENTIALS_REQUIRED", "The IOTA signer requires a credential provider", 503, "AUTHORIZATION");
-      this.statePublisher = new IotaStatePublisher(config.objectid, credentials);
+      this.statePublisher = new IotaStatePublisher(config.objectid, credentials, this.rpcClient);
     }
   }
 
   async initialize() { await this.statePublisher?.initialize(); }
+
+  async getSubscription() {
+    if (!this.statePublisher) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription accounting requires an enabled signer", 503, "OBJECTID");
+    return this.statePublisher.getSubscription();
+  }
 
   async isReady() {
     try { await this.oid.session.config(this.config.objectid.network); return true; } catch { return false; }
@@ -84,23 +89,27 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
     try { return await candidate(payload); } catch (error) { throw mapObjectIdError(error); }
   }
 
-  createTwin(input: unknown) { return this.mutate("createTwin", input); }
-  updateTwin(id: string, input: unknown) { return this.mutate("updateTwin", { twinId: id, ...asRecord(input) }); }
+  createTwin(input: unknown) {
+    return this.statePublisher ? this.statePublisher.createTwin(asRecord(input)) : this.mutate("createTwin", input);
+  }
+  updateTwin(id: string, input: unknown) {
+    return this.statePublisher ? this.statePublisher.updateTwin(id, asRecord(input)) : this.mutate("updateTwin", { twinId: id, ...asRecord(input) });
+  }
   publishState(twinId: string, input: unknown) {
     return this.statePublisher
       ? this.statePublisher.publishState(twinId, asRecord(input))
       : this.mutate("publishState", { twinId, ...asRecord(input) });
   }
-  addDataset(twinId: string, input: unknown) { return this.mutate("addDataset", { twinId, ...asRecord(input) }); }
-  addAspect(twinId: string, input: unknown) { return this.mutate("addTwinAspect", { twinId, ...asRecord(input) }); }
-  addInterface(twinId: string, input: unknown) { return this.mutate("addTwinInterface", { twinId, ...asRecord(input) }); }
-  addModel(twinId: string, input: unknown) { return this.mutate("addModel", { twinId, ...asRecord(input) }); }
-  addIdentifier(twinId: string, input: unknown) { return this.mutate("addIdentifier", { twinId, ...asRecord(input) }); }
-  addIdentifierMapping(twinId: string, input: unknown) { return this.mutate("addTwinIdentifierMapping", { twinId, ...asRecord(input) }); }
-  addRelation(twinId: string, input: unknown) { return this.mutate("addRelation", { twinId, ...asRecord(input) }); }
-  createComposition(twinId: string, input: unknown) { return this.mutate("createTwinComposition", { twinId, ...asRecord(input) }); }
-  emitTwinEvent(twinId: string, input: unknown) { return this.mutate("emitTwinEvent", { twinId, ...asRecord(input) }); }
-  createMaturityAssessment(twinId: string, input: unknown) { return this.mutate("createTwinMaturityAssessment", { twinId, ...asRecord(input) }); }
+  addDataset(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.addDataset(twinId, asRecord(input)) : this.mutate("addDataset", { twinId, ...asRecord(input) }); }
+  addAspect(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.addAspect(twinId, asRecord(input)) : this.mutate("addTwinAspect", { twinId, ...asRecord(input) }); }
+  addInterface(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.addInterface(twinId, asRecord(input)) : this.mutate("addTwinInterface", { twinId, ...asRecord(input) }); }
+  addModel(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.addModel(twinId, asRecord(input)) : this.mutate("addModel", { twinId, ...asRecord(input) }); }
+  addIdentifier(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.addIdentifier(twinId, asRecord(input)) : this.mutate("addIdentifier", { twinId, ...asRecord(input) }); }
+  addIdentifierMapping(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.addIdentifierMapping(twinId, asRecord(input)) : this.mutate("addTwinIdentifierMapping", { twinId, ...asRecord(input) }); }
+  addRelation(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.addRelation(twinId, asRecord(input)) : this.mutate("addRelation", { twinId, ...asRecord(input) }); }
+  createComposition(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.createComposition(twinId, asRecord(input)) : this.mutate("createTwinComposition", { twinId, ...asRecord(input) }); }
+  emitTwinEvent(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.emitTwinEvent(twinId, asRecord(input)) : this.mutate("emitTwinEvent", { twinId, ...asRecord(input) }); }
+  createMaturityAssessment(twinId: string, input: unknown) { return this.statePublisher ? this.statePublisher.createMaturityAssessment(twinId, asRecord(input)) : this.mutate("createTwinMaturityAssessment", { twinId, ...asRecord(input) }); }
 
   async getTwinChildren(twinId: string, moveType: string) {
     if (!this.config.objectid.packageId) throw new AppError("OBJECTID_PACKAGE_ID_MISSING", "objectid.packageId is required", 503, "OBJECTID");

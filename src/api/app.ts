@@ -138,6 +138,12 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     commands: commands.capabilities(),
     retention: { enabled: config.retention.enabled, defaultDays: config.retention.defaultDays, ownerPolicySource: "configuration", slaReady: true },
   }));
+  api.get("/subscription", async (_request, response, next) => {
+    try {
+      if (!objectid.getSubscription) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription accounting is unavailable", 503, "OBJECTID");
+      response.set("Cache-Control", "no-store").json(await objectid.getSubscription());
+    } catch (error) { next(error); }
+  });
   api.get("/storage/retention/status", (_request, response) => response.set("Cache-Control", "no-store").json(retention.status()));
   api.get("/twins/:id/realtime/status", async (request, response, next) => {
     try {
