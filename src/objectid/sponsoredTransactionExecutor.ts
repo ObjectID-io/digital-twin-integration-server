@@ -116,11 +116,14 @@ export class SponsoredTransactionExecutor {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
-    const payload = await response.json().catch(() => undefined) as any;
+    const responseText = await response.text();
+    let payload: any;
+    try { payload = responseText ? JSON.parse(responseText) : undefined; }
+    catch { payload = undefined; }
     if (!response.ok) {
       throw new AppError(
         "OBJECTID_GAS_STATION_REJECTED",
-        String(payload?.error?.message ?? payload?.message ?? `Gas Station returned HTTP ${response.status}`),
+        gasStationErrorMessage(payload, responseText, response.status),
         response.status >= 500 ? 503 : 502,
         "OBJECTID",
         { stationStatus: response.status },
@@ -128,6 +131,14 @@ export class SponsoredTransactionExecutor {
     }
     return (payload?.result ?? payload) as T;
   }
+}
+
+function gasStationErrorMessage(payload: any, responseText: string, status: number) {
+  if (typeof payload?.error === "string" && payload.error.trim()) return payload.error;
+  if (payload?.error?.message) return String(payload.error.message);
+  if (payload?.message) return String(payload.message);
+  const plainText = responseText.trim();
+  return plainText ? plainText.slice(0, 1_000) : `Gas Station returned HTTP ${status}`;
 }
 
 function validateReservation(value: GasReservation) {
