@@ -72,7 +72,7 @@ commands:
   signingKeyFile: /run/secrets/command_signing_key
   signingKeyId: dtis-command-v1
   catalogs:
-    - twinId: "0xreplace-with-a-twin-created-by-the-new-package"
+    - twinId: "${credential:MQTT_TWIN_ID}"
       interfaceId: urn:objectid:interface:simulator-control:v1
       commands:
         - name: pauseSimulation
