@@ -142,6 +142,7 @@ services:
       - ALL
 
   mqtt-digital-twin-simulator:
+    profiles: ["simulator"]
     build:
       context: ./mqtt-digital-twin-simulator
       dockerfile: Dockerfile
@@ -160,7 +161,7 @@ services:
       SIM_STATE_TOPIC: objectid/twins/telemetry/state
       MQTT_QOS: "1"
       SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-5000}
-      SIM_ASSET_ID: ${SIM_ASSET_ID:?set SIM_ASSET_ID to a Twin created by the new package}
+      SIM_ASSET_ID: ${SIM_ASSET_ID:-unconfigured}
       SIM_MACHINE_NAME: ${SIM_MACHINE_NAME:-mqtt-vps-twin}
       SIM_COMMAND_INTERFACE_ID: urn:objectid:interface:simulator-control:v1
       SIM_COMMAND_SIGNING_KEY_FILE: /run/secrets/command_signing_key

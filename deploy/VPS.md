@@ -29,21 +29,20 @@ Save the shared `SubscriptionAccount` ID shown under created object changes. The
 
 1. Copy `.env.vps.example` to `.env` and set the service DID.
 2. Set `B2_KEY_ID` in `secrets/credentials.json` to the Backblaze Application Key ID. The bucket ID is not an S3 credential.
-3. Set `MQTT_TWIN_ID` to an existing `OIDTwin` object created with the published testnet package.
+3. `MQTT_TWIN_ID` does not have to reference a Twin for the core service to start. Keep the valid 32-byte placeholder `0x0000000000000000000000000000000000000000000000000000000000000000` until an MQTT mapping is enabled.
 4. Keep `MQTT_PASSWORD` in `secrets/credentials.json` identical to the contents of `secrets/mqtt_password.txt`.
 5. Set `DTIS_IOTA_SEED` to the 64-character hexadecimal seed, without `0x`, and set `DTIS_SIGNER_ADDRESS` to its derived IOTA address.
 6. Set `DTIS_TWIN_CONTROLLER_CAP_ID` to the ControllerCap controlled by that signer and `DTIS_SUBSCRIPTION_ACCOUNT_ID` to the new shared account. No OID Credit token or policy is used.
 7. Set `DTIS_GAS_STATION_1_TOKEN` and `DTIS_GAS_STATION_2_TOKEN` to the ObjectID Gas Station Bearer tokens. All normal Twin mutations are sponsored and fail closed if both stations are unavailable.
-8. Set both `MQTT_TWIN_ID` and `SIM_ASSET_ID` to a Twin created by this new package, and replace the command-catalog Twin placeholder in `config/config.vps-testnet.yaml` with the same ID.
+8. Only when enabling the optional simulator, set both `MQTT_TWIN_ID` and `SIM_ASSET_ID` to the Twin that must receive its telemetry. The command catalog resolves the same `MQTT_TWIN_ID` credential.
 
 The supplied Backblaze application key is kept only in the ignored local credentials file. Rotate it if this workspace or conversation has been shared.
 The IOTA seed is equivalent to a private signing key. Never commit `secrets/credentials.json`; startup fails if the seed derives an address different from `DTIS_SIGNER_ADDRESS`.
 
-If no Twin exists yet for the new package, bootstrap only the API stack with a temporary simulator value, create the Twin through the sponsored endpoint, then put the returned `id` in the three locations described at step 8:
+No Twin has to exist before the API stack starts. The simulator is isolated behind the Compose `simulator` profile and is not launched by the normal command below. Twins can then be created through the Webview or the sponsored endpoint. To use the API directly:
 
 ```bash
-SIM_ASSET_ID=0x0000000000000000000000000000000000000000000000000000000000000000 \
-  docker compose up -d --build digital-twin-integration-server
+docker compose up -d --build digital-twin-integration-server
 
 API_KEY=$(jq -r .DTIS_API_KEY secrets/credentials.json)
 curl --fail -X POST http://127.0.0.1:8080/api/v1/twins \
@@ -81,9 +80,10 @@ Both published ports bind to loopback by default; Traefik reaches the API over t
 
 ## Digital Twin simulator
 
-The Compose stack also runs `mqtt-digital-twin-simulator`. It publishes industrial telemetry every five seconds to the dataset topic. The integration server aggregates these samples into five-minute windows before storing and registering each dataset, limiting monthly subscription-credit consumption.
+The optional `mqtt-digital-twin-simulator` publishes industrial telemetry every five seconds to the dataset topic. The integration server aggregates these samples into five-minute windows before storing and registering each dataset, limiting monthly subscription-credit consumption. Configure `MQTT_TWIN_ID` in `secrets/credentials.json` and `SIM_ASSET_ID` in `.env` with the same real Twin ID, then enable its profile:
 
 ```bash
+docker compose --profile simulator up -d --build mqtt-digital-twin-simulator
 docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-server
 ```
 
