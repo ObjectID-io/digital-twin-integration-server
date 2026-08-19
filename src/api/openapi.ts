@@ -16,7 +16,7 @@ export const openApiDocument = {
     "/ready": { get: { summary: "ObjectID and required dependency readiness", responses: { "200": { description: "Ready" }, "503": { description: "Not ready" } } } },
     "/api/v1/twins/{id}": { get: { summary: "Get Twin", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Twin" } } } },
     "/api/v1/capabilities": { get: { summary: "Discover Integration Server capabilities", responses: { "200": { description: "Capabilities" } } } },
-    "/api/v1/subscription": { get: { summary: "Get the configured on-chain subscription plan, period and usage", responses: { "200": { description: "Subscription accounting" }, "503": { description: "Subscription unavailable" } } } },
+    "/api/v1/subscription": { get: { summary: "Get the authenticated tenant's on-chain subscription plan, period and usage", responses: { "200": { description: "Tenant subscription accounting" }, "403": { description: "Tenant/subscription mismatch" }, "503": { description: "Subscription unavailable" } } } },
     "/api/v1/storage/retention/status": { get: { summary: "Inspect automatic managed-storage retention status", responses: { "200": { description: "Retention policy and last pruning run" } } } },
     "/api/v1/twins/{id}/realtime/status": { get: { summary: "Get realtime availability for a Twin", responses: { "200": { description: "Realtime status" } } } },
     "/api/v1/twins/{id}/realtime/latest": { get: { summary: "Get the latest mapped realtime event", responses: { "200": { description: "Realtime event" }, "404": { description: "No realtime data" } } } },

@@ -15,6 +15,7 @@ export interface AppConfig {
       addressCredential: string;
       controllerCapCredential: string;
       subscriptionCredential: string;
+      delegatedAccounts: boolean;
       clockId: string;
       gasBudget: number;
       gasStations: Array<{
@@ -33,6 +34,8 @@ export interface AppConfig {
     authMode: AuthMode;
     apiKeyCredential: string;
     jwtSecretCredential: string;
+    tenantRegistryCredential: string;
+    defaultTenantId?: string;
     serviceDid?: string;
     rateLimitPerMinute: number;
   };

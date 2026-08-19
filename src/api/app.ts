@@ -9,6 +9,8 @@ import { ProviderObjectIdAdapter } from "../objectid/adapter.js";
 import type { ObjectIdAdapter } from "../objectid/types.js";
 import { EnvironmentCredentialProvider, FileCredentialProvider, resolveCredentialReferences } from "../security/credentials.js";
 import { authMiddleware, createAuthProvider } from "../security/auth.js";
+import { TenantRegistry } from "../security/tenants.js";
+import type { AccountingContext } from "../objectid/types.js";
 import { idempotencyMiddleware, type IdempotencyStore } from "../security/idempotency.js";
 import { createIdempotencyStore } from "../security/idempotencyFactory.js";
 import { ProfileRegistry } from "../schemas/registry.js";
@@ -75,6 +77,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const credentials = config.security.credentialProvider === "file"
     ? new FileCredentialProvider(config.security.credentialFile ?? "./secrets/credentials.json")
     : new EnvironmentCredentialProvider();
+  const tenants = new TenantRegistry(config.security, credentials);
   const objectid = adapter ?? new ProviderObjectIdAdapter(config, undefined, credentials);
   const profiles = new ProfileRegistry(config.profiles.directory);
   const storage = new StorageProviderFactory(credentials).createRouter(config.storage);
@@ -97,10 +100,11 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     async (_key, dataset) => {
       const twinId = String(dataset.twinId);
       const idempotencyKey = `dataset:${twinId}:${String(dataset.payloadHash)}`;
-      await worker.enqueue(worker.createJob("ADD_DATASET", twinId, dataset, idempotencyKey));
+      const accounting = await connectorAccounting(String(dataset.tenantId ?? ""));
+      await worker.enqueue(worker.createJob("ADD_DATASET", twinId, dataset, idempotencyKey, accounting));
     },
   );
-  const auth = createAuthProvider(config, credentials);
+  const auth = createAuthProvider(config, credentials, tenants);
   const realtime = new TwinRealtimeHub();
   const commands = new CommandService(config.commands, connectors.get("mqtt"));
   const retention = new StorageRetentionService(config.retention, storage, objectid);
@@ -138,11 +142,15 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     commands: commands.capabilities(),
     retention: { enabled: config.retention.enabled, defaultDays: config.retention.defaultDays, ownerPolicySource: "configuration", slaReady: true },
   }));
-  api.get("/subscription", async (_request, response, next) => {
+  api.get("/subscription", async (request, response, next) => {
     try {
       if (!objectid.getSubscription) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription accounting is unavailable", 503, "OBJECTID");
-      response.set("Cache-Control", "no-store").json(await objectid.getSubscription());
+      response.set("Cache-Control", "no-store").json(await objectid.getSubscription(request.auth?.accounting));
     } catch (error) { next(error); }
+  });
+  api.use("/twins/:id", async (request, _response, next) => {
+    try { await assertTenantTwin(request, String(request.params.id)); next(); }
+    catch (error) { next(error); }
   });
   api.get("/storage/retention/status", (_request, response) => response.set("Cache-Control", "no-store").json(retention.status()));
   api.get("/twins/:id/realtime/status", async (request, response, next) => {
@@ -209,9 +217,16 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       response.set("Cache-Control", "no-store").json(await commands.get(request.params.id!, request.params.commandId!));
     } catch (error) { next(error); }
   });
-  api.get("/dids/:did/twins", async (request, response, next) => { try { response.json(await twins.findTwinsByDid(request.params.did!)); } catch (error) { next(error); } });
+  api.get("/dids/:did/twins", async (request, response, next) => {
+    try {
+      if (request.auth?.accounting && request.params.did!.toLowerCase() !== request.auth.accounting.ownerDid.toLowerCase()) {
+        throw new AppError("OBJECTID_TENANT_DID_MISMATCH", "The authenticated tenant may only enumerate its owner DID", 403, "AUTHORIZATION");
+      }
+      response.json(await twins.findTwinsByDid(request.params.did!));
+    } catch (error) { next(error); }
+  });
   api.get("/twins/:id", async (request, response, next) => { try { response.json(await twins.getTwin(request.params.id!)); } catch (error) { next(error); } });
-  api.post("/twins", async (request, response, next) => { try { response.status(201).json(await twins.createProfiledTwin(request.body)); } catch (error) { next(error); } });
+  api.post("/twins", async (request, response, next) => { try { response.status(201).json(await twins.createProfiledTwin(request.body, request.auth?.accounting)); } catch (error) { next(error); } });
   api.get("/profiles", async (_request, response, next) => { try { response.json(await profiles.listProfiles()); } catch (error) { next(error); } });
   api.post("/profiles/:profileId/validate", async (request, response, next) => {
     try { response.json(await profiles.validateAgainstProfile(request.params.profileId!, request.body)); } catch (error) { next(error); }
@@ -219,21 +234,21 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   api.post("/twins/:id/validate-profile", async (request, response, next) => {
     try { response.json(await twins.validateBoundProfile(request.params.id!, String(request.body.profile), request.body.payload)); } catch (error) { next(error); }
   });
-  api.post("/twins/:id/states", mutation(TwinAction.PublishState, (id, body) => twins.publishState(id, body)));
-  api.post("/twins/:id/datasets", mutation(TwinAction.AddDataset, (id, body) => twins.registerDataset(id, body)));
-  api.post("/twins/:id/models", mutation(TwinAction.AddModel, (id, body) => twins.registerModel(id, body)));
-  api.post("/twins/:id/interfaces", mutation(TwinAction.AddInterface, (id, body) => objectid.addInterface(id, validateInterfaceInput(body))));
-  api.post("/twins/:id/compositions", mutation(TwinAction.ModifyComposition, (id, body) => objectid.createComposition(id, validateCompositionInput(body))));
-  api.post("/twins/:id/identifier-mappings", mutation(TwinAction.ModifyIdentifierMapping, (id, body) => objectid.addIdentifierMapping(id, validateIdentifierMappingInput(body))));
-  api.post("/twins/:id/maturity/assessments", mutation(TwinAction.CreateMaturityAssessment, async (id, body) => {
+  api.post("/twins/:id/states", mutation(TwinAction.PublishState, (id, body, accounting) => twins.publishState(id, body, accounting)));
+  api.post("/twins/:id/datasets", mutation(TwinAction.AddDataset, (id, body, accounting) => twins.registerDataset(id, body, accounting)));
+  api.post("/twins/:id/models", mutation(TwinAction.AddModel, (id, body, accounting) => twins.registerModel(id, body, accounting)));
+  api.post("/twins/:id/interfaces", mutation(TwinAction.AddInterface, (id, body, accounting) => objectid.addInterface(id, validateInterfaceInput(body), accounting)));
+  api.post("/twins/:id/compositions", mutation(TwinAction.ModifyComposition, (id, body, accounting) => objectid.createComposition(id, validateCompositionInput(body), accounting)));
+  api.post("/twins/:id/identifier-mappings", mutation(TwinAction.ModifyIdentifierMapping, (id, body, accounting) => objectid.addIdentifierMapping(id, validateIdentifierMappingInput(body), accounting)));
+  api.post("/twins/:id/maturity/assessments", mutation(TwinAction.CreateMaturityAssessment, async (id, body, accounting) => {
     const evidence = await maturity.prepareEvidence(id, body.evidence ?? []);
-    return objectid.createMaturityAssessment(id, { ...body, evidence });
+    return objectid.createMaturityAssessment(id, { ...body, evidence }, accounting);
   }));
   api.post("/twins/:id/events", async (request, response, next) => {
     const action = isMaintenanceEvent(request.body) ? TwinAction.EmitMaintenanceEvent : TwinAction.EmitBusinessEvent;
     try {
       await authorize(request, request.params.id!, action);
-      response.status(202).json(await twins.registerBusinessEvent(request.params.id!, request.body));
+      response.status(202).json(await twins.registerBusinessEvent(request.params.id!, request.body, request.auth?.accounting));
     } catch (error) { next(error); }
   });
   api.get("/twins/:id/thread", async (request, response, next) => { try { response.json(await threads.getDigitalThread(request.params.id!, threadOptions(request.query))); } catch (error) { next(error); } });
@@ -293,12 +308,12 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     response.status(mapped.status).json(mapped.body);
   });
 
-  function mutation(action: TwinAction, execute: (id: string, body: any) => Promise<unknown>) {
+  function mutation(action: TwinAction, execute: (id: string, body: any, accounting?: AccountingContext) => Promise<unknown>) {
     return async (request: express.Request, response: express.Response, next: express.NextFunction) => {
       try {
         const twinId = String(request.params.id);
         await authorize(request, twinId, action);
-        response.status(202).json(await execute(twinId, request.body));
+        response.status(202).json(await execute(twinId, request.body, request.auth?.accounting));
       }
       catch (error) { next(error); }
     };
@@ -307,6 +322,20 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   async function authorize(request: express.Request, twinId: string, action: TwinAction) {
     try { await policy.assertAllowed(twinId, callerDid(request, config), action); }
     catch (error) { if (error instanceof AppError && error.code === "TWIN_POLICY_DENIED") policyDenied.inc({ action }); throw error; }
+  }
+
+  async function assertTenantTwin(request: express.Request, twinId: string) {
+    const accounting = request.auth?.accounting;
+    if (!accounting) return;
+    const twin = await objectid.getTwin(twinId) as any;
+    const fields = twin?.data?.content?.fields ?? twin?.content?.fields ?? twin?.fields ?? twin ?? {};
+    const rawSubscription = fields.subscription_id ?? fields.subscriptionId;
+    const subscriptionId = typeof rawSubscription === "string"
+      ? rawSubscription
+      : String(rawSubscription?.id ?? rawSubscription?.bytes ?? rawSubscription?.value ?? "");
+    if (subscriptionId.toLowerCase() !== accounting.subscriptionId.toLowerCase()) {
+      throw new AppError("OBJECTID_TENANT_TWIN_MISMATCH", "The authenticated tenant cannot access this Twin", 403, "AUTHORIZATION", { tenantId: accounting.tenantId, twinId });
+    }
   }
 
   async function ingestMqttMessage(message: MappedMqttMessage) {
@@ -320,7 +349,17 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     const mapped = mqttMessageToState(message);
     const source = message.topic ?? message.nodeId ?? "unknown";
     const key = `connector-state:${mapped.twinId}:${source}:${message.observedAt}`;
-    await worker.enqueue(worker.createJob("PUBLISH_STATE", mapped.twinId, mapped.state, key));
+    const accounting = await connectorAccounting(String(message.mapping.tenantId ?? ""));
+    await worker.enqueue(worker.createJob("PUBLISH_STATE", mapped.twinId, mapped.state, key, accounting));
+  }
+
+  async function connectorAccounting(tenantId: string) {
+    if (tenantId) return tenants.get(tenantId);
+    const fallback = await tenants.default();
+    if (config.objectid.signer?.delegatedAccounts && !fallback) {
+      throw new AppError("CONNECTOR_TENANT_REQUIRED", "Connector mappings require tenantId when delegated accounting is enabled", 500, "VALIDATION");
+    }
+    return fallback;
   }
 
   return {
@@ -368,6 +407,7 @@ function threadOptions(query: Record<string, unknown>): PaginationOptions {
 }
 
 function callerDid(request: express.Request, config: AppConfig) {
+  if (request.auth?.accounting) return request.auth.accounting.ownerDid;
   const claims = request.auth?.claims;
   const delegated = request.header("x-objectid-caller-did");
   return String(claims?.did ?? (config.security.authMode !== "disabled" ? delegated : undefined) ?? claims?.sub ?? config.security.serviceDid ?? request.auth?.subject ?? "");

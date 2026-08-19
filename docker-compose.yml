@@ -100,7 +100,7 @@ services:
       DTIS_PROFILES_DIRECTORY: /profiles
       DTIS_OBJECTID_NETWORK: testnet
       DTIS_OBJECTID_RPC_URL: https://api.testnet.iota.cafe
-      DTIS_OBJECTID_PACKAGE_ID: 0x2b20f39e5e954b232370b019d21c7cc87ff41e7ee0a7802b9a47be14059e1772
+      DTIS_OBJECTID_PACKAGE_ID: ${DTIS_OBJECTID_PACKAGE_ID:?set the newly published oid_twin package ID in .env}
       DTIS_CREDENTIAL_PROVIDER: file
       DTIS_CREDENTIAL_FILE: /run/secrets/dtis_credentials
       DTIS_AUTH_MODE: api-key

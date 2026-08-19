@@ -13,8 +13,10 @@ export class EnvironmentCredentialProvider implements CredentialProvider {
 export class FileCredentialProvider implements CredentialProvider {
   constructor(private readonly path: string) {}
   async get(name: string) {
-    const data = JSON.parse(await readFile(this.path, "utf8")) as Record<string, string>;
-    return data[name];
+    const data = JSON.parse(await readFile(this.path, "utf8")) as Record<string, unknown>;
+    const value = data[name];
+    if (value === undefined || value === null) return undefined;
+    return typeof value === "string" ? value : JSON.stringify(value);
   }
 }
 

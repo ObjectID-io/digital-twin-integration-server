@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AppError } from "../common/errors.js";
 import { logger } from "../common/logger.js";
 import { datasetsCreated, queueDepth, queueJobs, queueJobsFailed, queueRetries } from "../health/metrics.js";
-import type { ObjectIdAdapter } from "../objectid/types.js";
+import type { AccountingContext, ObjectIdAdapter } from "../objectid/types.js";
 import type { QueueItem, QueueProvider } from "./memoryQueue.js";
 
 export type IngestionJobType = "PUBLISH_STATE" | "ADD_DATASET" | "EMIT_EVENT";
@@ -15,6 +15,7 @@ export interface IngestionJob {
   payload: Record<string, unknown>;
   attempts: number;
   createdAt: number;
+  accounting?: AccountingContext;
 }
 
 export interface RetryOptions {
@@ -35,8 +36,8 @@ export class IngestionWorker {
     private readonly options: RetryOptions,
   ) {}
 
-  createJob(type: IngestionJobType, twinId: string, payload: Record<string, unknown>, idempotencyKey: string = randomUUID()): IngestionJob {
-    return { id: randomUUID(), idempotencyKey, type, twinId, payload, attempts: 0, createdAt: Date.now() };
+  createJob(type: IngestionJobType, twinId: string, payload: Record<string, unknown>, idempotencyKey: string = randomUUID(), accounting?: AccountingContext): IngestionJob {
+    return { id: randomUUID(), idempotencyKey, type, twinId, payload, attempts: 0, createdAt: Date.now(), accounting };
   }
 
   async enqueue(job: IngestionJob) {
@@ -79,9 +80,9 @@ export class IngestionWorker {
 
   private async execute(job: IngestionJob) {
     const payload = { ...job.payload, externalReference: job.idempotencyKey };
-    if (job.type === "PUBLISH_STATE") await this.objectid.publishState(job.twinId, payload);
-    else if (job.type === "ADD_DATASET") { await this.objectid.addDataset(job.twinId, payload); datasetsCreated.inc(); }
-    else await this.objectid.emitTwinEvent(job.twinId, payload);
+    if (job.type === "PUBLISH_STATE") await this.objectid.publishState(job.twinId, payload, job.accounting);
+    else if (job.type === "ADD_DATASET") { await this.objectid.addDataset(job.twinId, payload, job.accounting); datasetsCreated.inc(); }
+    else await this.objectid.emitTwinEvent(job.twinId, payload, job.accounting);
   }
 
   private async handleFailure(item: QueueItem<IngestionJob>, error: AppError) {

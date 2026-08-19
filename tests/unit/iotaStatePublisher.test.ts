@@ -23,6 +23,7 @@ function objectidConfig(): AppConfig["objectid"] {
       addressCredential: "ADDRESS",
       controllerCapCredential: "CAP",
       subscriptionCredential: "SUBSCRIPTION",
+      delegatedAccounts: false,
       clockId: "0x6",
       gasBudget: 100_000_000,
       gasStations: [{ url: "https://gas.objectid.test", tokenCredential: "GAS_TOKEN" }],
@@ -81,7 +82,18 @@ describe("IotaStatePublisher", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ effects: { transactionDigest: "tx-digest" } }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     const waitForTransaction = vi.fn(async () => ({ digest: "tx-digest", effects: { status: { status: "success" } } }));
-    const client = { waitForTransaction } as unknown as IotaClient;
+    const getObject = vi.fn(async ({ id: objectId }: { id: string }) => objectId === id("5") ? { data: {
+      type: `${id("1")}::oid_twin::OIDTwin`,
+      content: { dataType: "moveObject", type: `${id("1")}::oid_twin::OIDTwin`, fields: { subscription_id: id("3") } },
+    } } : { data: {
+      type: `${id("1")}::oid_twin::SubscriptionAccount`,
+      content: { dataType: "moveObject", type: `${id("1")}::oid_twin::SubscriptionAccount`, fields: {
+        customer_id: "legacy", controller_id: id("7"), plan: 1, status: 1, period_start: "0",
+        period_end: String(Date.now() + 60_000), twin_limit: "5", active_twin_count: "1",
+        credit_limit: "10000", credits_used: "1", updated_at: "1",
+      } },
+    } });
+    const client = { waitForTransaction, getObject } as unknown as IotaClient;
     const publisher = new IotaStatePublisher(objectidConfig(), credentials(), client);
 
     await publisher.initialize();

@@ -13,6 +13,7 @@ export interface MqttMapping {
   schemaUri?: string;
   profile?: string;
   qos?: 0 | 1 | 2;
+  tenantId?: string;
 }
 
 export class MqttConnector implements TwinConnector {

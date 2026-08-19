@@ -1,5 +1,8 @@
 # ObjectID Digital Twin Stateless Integration Server
 
+Multi-tenant subscription accounting and trusted Integration Server provisioning are described in
+[`docs/MULTI_TENANT_ACCOUNTING.md`](docs/MULTI_TENANT_ACCOUNTING.md).
+
 ## Purpose
 
 Local-first integration and interoperability layer between PLC/IoT/enterprise

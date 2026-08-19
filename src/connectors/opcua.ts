@@ -18,6 +18,7 @@ export interface OpcUaMapping {
   schemaUri?: string;
   profile?: string;
   samplingIntervalMs?: number;
+  tenantId?: string;
 }
 
 type ClientFactory = (options: Record<string, unknown>) => any;

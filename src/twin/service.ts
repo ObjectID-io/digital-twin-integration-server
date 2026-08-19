@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ObjectIdAdapter } from "../objectid/types.js";
+import type { AccountingContext, ObjectIdAdapter } from "../objectid/types.js";
 import type { ProfileRegistry } from "../schemas/registry.js";
 import type { StorageProvider } from "../storage/types.js";
 import { AppError } from "../common/errors.js";
@@ -13,12 +13,12 @@ export class TwinService {
 
   getTwin(id: string) { return this.objectid.getTwin(id); }
   findTwinsByDid(did: string) { return this.objectid.findTwinsByDid(did); }
-  createTwin(input: unknown) { return this.objectid.createTwin(input); }
-  updateTwin(id: string, input: unknown) { return this.objectid.updateTwin(id, input); }
-  publishState(id: string, input: unknown) { return this.objectid.publishState(id, input); }
+  createTwin(input: unknown, accounting?: AccountingContext) { return this.objectid.createTwin(input, accounting); }
+  updateTwin(id: string, input: unknown, accounting?: AccountingContext) { return this.objectid.updateTwin(id, input, accounting); }
+  publishState(id: string, input: unknown, accounting?: AccountingContext) { return this.objectid.publishState(id, input, accounting); }
 
-  async registerBusinessEvent(twinId: string, input: any) {
-    if (input.payloadData === undefined) return this.objectid.emitTwinEvent(twinId, input);
+  async registerBusinessEvent(twinId: string, input: any, accounting?: AccountingContext) {
+    if (input.payloadData === undefined) return this.objectid.emitTwinEvent(twinId, input, accounting);
     const stored = await this.storage.store({
       data: bytesOf(input.payloadData), contentType: input.contentType ?? "application/json",
       fileName: input.fileName ?? "event-payload.json", category: "event-payload", twinId,
@@ -26,17 +26,17 @@ export class TwinService {
     return this.objectid.emitTwinEvent(twinId, {
       ...input, payloadData: undefined, payloadRef: stored.uri, payloadHash: stored.hash,
       payloadSize: stored.size, contentType: stored.contentType,
-    });
+    }, accounting);
   }
 
-  async createProfiledTwin(input: any) {
+  async createProfiledTwin(input: any, accounting?: AccountingContext) {
     if (input.profile) await this.profiles.validate(String(input.profile), input);
-    const twin = await this.objectid.createTwin(input);
+    const twin = await this.objectid.createTwin(input, accounting);
     if (input.profile) {
       await this.objectid.addAspect(String((twin as any)?.id ?? input.id ?? ""), {
         aspectCode: "iso23247_ome", aspectType: "observable-manufacturing-element",
         schemaUri: input.profile, semanticRef: "ISO23247:OME", immutableMetadata: JSON.stringify({ profileId: input.profile }),
-      });
+      }, accounting);
     }
     return twin;
   }
@@ -55,7 +55,7 @@ export class TwinService {
     return this.profiles.validateAgainstProfile(profileId, payload);
   }
 
-  async registerDataset(twinId: string, input: any) {
+  async registerDataset(twinId: string, input: any, accounting?: AccountingContext) {
     if (input.data !== undefined) {
       const stored = await this.storage.store({
         data: Buffer.from(JSON.stringify(input.data)), contentType: input.contentType ?? "application/json",
@@ -65,14 +65,14 @@ export class TwinService {
       return this.objectid.addDataset(twinId, {
         ...input, data: undefined, storageUri: stored.uri, payloadHash: stored.hash,
         payloadSize: stored.size, hashAlgorithm: stored.hashAlgorithm, contentType: stored.contentType,
-      });
+      }, accounting);
     }
     if (input.payload && !input.payloadHash) input.payloadHash = `sha256:${createHash("sha256").update(String(input.payload)).digest("hex")}`;
-    return this.objectid.addDataset(twinId, input);
+    return this.objectid.addDataset(twinId, input, accounting);
   }
 
-  async registerModel(twinId: string, input: any) {
-    if (input.data === undefined) return this.objectid.addModel(twinId, input);
+  async registerModel(twinId: string, input: any, accounting?: AccountingContext) {
+    if (input.data === undefined) return this.objectid.addModel(twinId, input, accounting);
     const stored = await this.storage.store({
       data: bytesOf(input.data), contentType: input.contentType ?? "application/octet-stream",
       fileName: input.fileName ?? "model.bin", category: "model", twinId,
@@ -81,7 +81,7 @@ export class TwinService {
     return this.objectid.addModel(twinId, {
       ...input, data: undefined, storageUri: stored.uri, payloadHash: stored.hash,
       payloadSize: stored.size, hashAlgorithm: stored.hashAlgorithm, contentType: stored.contentType,
-    });
+    }, accounting);
   }
 }
 

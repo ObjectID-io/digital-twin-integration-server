@@ -102,6 +102,16 @@ For two Compose projects on the same VPS, either expose this API behind an authe
 
 The realtime endpoints are `/api/v1/capabilities`, `/api/v1/twins/:id/realtime/status`, `/latest` and `/stream`. The existing `DTIS_AUTH_MODE=api-key` protects all of them. Encrypted MQTT payloads pass through unchanged; only the webview BFF has the per-user decryption password.
 
+## Multi-tenant rollout
+
+The hosted DTIS resolves the API key to a tenant registry entry and never accepts a caller-selected
+subscription ID. After publishing the Move package, provision the public/demo account and every
+customer account with `scripts/provision-dtis-tenant.sh`, then add the returned entries to
+`DTIS_TENANTS_JSON` in `secrets/credentials.json`. Set the new package ID in `.env` as
+`DTIS_OBJECTID_PACKAGE_ID` and use a newly created Twin for `SIM_ASSET_ID`, `MQTT_TWIN_ID`, connector
+mappings and command catalogs. See `docs/MULTI_TENANT_ACCOUNTING.md` for the complete format and
+security model.
+
 ## Backblaze check
 
 After setting the Application Key ID, use `/ready` and inspect the server logs. An invalid key pair or a key without read/write access to `OID-Digital-Twin` will make the required storage provider unhealthy.

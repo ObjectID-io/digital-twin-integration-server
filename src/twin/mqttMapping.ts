@@ -37,6 +37,7 @@ export function mqttMessageToDataset(message: MappedMqttMessage) {
       datasetType: message.mapping.datasetType,
       schemaUri: message.mapping.schemaUri,
       profile: message.mapping.profile,
+      tenantId: message.mapping.tenantId,
     },
   };
 }

@@ -16,6 +16,7 @@ const defaults: AppConfig = {
     authMode: "disabled",
     apiKeyCredential: "DTIS_API_KEY",
     jwtSecretCredential: "DTIS_JWT_SECRET",
+    tenantRegistryCredential: "DTIS_TENANTS_JSON",
     rateLimitPerMinute: 120,
   },
   cache: { type: "memory", ttlMs: 300_000 },
@@ -57,6 +58,8 @@ function applyEnvironment(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig 
   if (env.DTIS_AUTH_MODE) next.security.authMode = env.DTIS_AUTH_MODE as AppConfig["security"]["authMode"];
   if (env.DTIS_CREDENTIAL_PROVIDER) next.security.credentialProvider = env.DTIS_CREDENTIAL_PROVIDER as "environment" | "file";
   if (env.DTIS_CREDENTIAL_FILE) next.security.credentialFile = env.DTIS_CREDENTIAL_FILE;
+  if (env.DTIS_TENANT_REGISTRY_CREDENTIAL) next.security.tenantRegistryCredential = env.DTIS_TENANT_REGISTRY_CREDENTIAL;
+  if (env.DTIS_DEFAULT_TENANT_ID) next.security.defaultTenantId = env.DTIS_DEFAULT_TENANT_ID;
   if (env.DTIS_SERVICE_DID) next.security.serviceDid = env.DTIS_SERVICE_DID;
   if (env.DTIS_DATA_DIRECTORY) next.dataset.directory = env.DTIS_DATA_DIRECTORY;
   if (env.DTIS_COMMANDS_ENABLED) next.commands.enabled = env.DTIS_COMMANDS_ENABLED === "true";
@@ -123,6 +126,9 @@ export async function loadConfig(path = process.env.DTIS_CONFIG ?? "./config/con
     }
     if (!config.objectid.signer.gasStations?.length) {
       throw new AppError("CONFIG_GAS_STATION_REQUIRED", "At least one ObjectID Gas Station is required", 500, "VALIDATION");
+    }
+    if (config.objectid.signer.delegatedAccounts && !config.security.tenantRegistryCredential) {
+      throw new AppError("CONFIG_TENANT_REGISTRY_REQUIRED", "Delegated accounting requires security.tenantRegistryCredential", 500, "VALIDATION");
     }
     for (const station of config.objectid.signer.gasStations) {
       if (!/^https:\/\//i.test(station.url) || !station.tokenCredential) {

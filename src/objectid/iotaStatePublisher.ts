@@ -6,14 +6,14 @@ import { AppError, mapObjectIdError } from "../common/errors.js";
 import { logger } from "../common/logger.js";
 import type { AppConfig } from "../config/types.js";
 import { requiredCredential, type CredentialProvider } from "../security/credentials.js";
-import type { SubscriptionStatus } from "./types.js";
+import type { AccountingContext, SubscriptionStatus } from "./types.js";
 import { SponsoredTransactionExecutor, type GasStationConnection } from "./sponsoredTransactionExecutor.js";
 
 type ObjectIdConfig = AppConfig["objectid"];
 
 interface SignerObjects {
   controllerCapId: string;
-  subscriptionId: string;
+  defaultSubscriptionId: string;
 }
 
 /** Direct writer for the subscription-based oid_twin ABI. All gas is sponsored by ObjectID Gas Station. */
@@ -55,16 +55,23 @@ export class IotaStatePublisher {
       token: tokens[index]!,
       reserveDurationSeconds: station.reserveDurationSeconds ?? 30,
     }));
-    this.objects = { controllerCapId, subscriptionId };
+    this.objects = { controllerCapId, defaultSubscriptionId: subscriptionId };
     this.executor = new SponsoredTransactionExecutor(this.client, keypair, stations, signer.gasBudget, this.config.timeoutMs);
     logger.info({ address: derivedAddress, network: this.config.network, subscriptionId, gasStations: stations.length }, "iota_twin_writer_ready");
   }
 
-  async createTwin(input: Record<string, unknown>) {
+  async createTwin(input: Record<string, unknown>, accounting?: AccountingContext) {
+    const subscriptionId = await this.subscriptionIdFor(accounting);
+    const subscription = await this.readSubscription(subscriptionId);
+    this.assertTenantSubscription(subscription, accounting);
+    if (!subscription.current || BigInt(subscription.remainingTwins) < 1n || BigInt(subscription.remainingCredits) < 1n) {
+      throw new AppError("OBJECTID_SUBSCRIPTION_CAPACITY_EXHAUSTED", "The tenant subscription cannot create another Twin", 402, "AUTHORIZATION", { subscriptionId });
+    }
+    const functionName = this.requiredSignerConfig().delegatedAccounts ? "create_twin_for_subscription_owner" : "create_twin";
     const result = await this.execute("create_twin", (tx) => {
       const targetObjectId = optionalObjectId(value(input, "targetObjectId", "target_object_id"));
-      tx.moveCall({ target: this.target("create_twin"), arguments: [
-        ...this.accountArguments(tx),
+      tx.moveCall({ target: this.target(functionName), arguments: [
+        ...this.accountArguments(tx, subscriptionId),
         tx.pure.string(requiredString(value(input, "twinType", "twin_type"), "twinType")),
         tx.pure.string(stringValue(value(input, "targetKind", "target_kind"), "asset")),
         tx.pure.option("address", targetObjectId),
@@ -85,12 +92,18 @@ export class IotaStatePublisher {
     return { id: created.objectId, digest: result.digest, transaction: result };
   }
 
-  async getSubscription(): Promise<SubscriptionStatus> {
-    if (!this.objects) await this.initialize();
-    const object = await this.client.getObject({ id: this.objects!.subscriptionId, options: { showContent: true, showType: true } });
-    if (object.error) throw new AppError("OBJECTID_SUBSCRIPTION_NOT_FOUND", "The configured SubscriptionAccount could not be read", 503, "OBJECTID", { objectId: this.objects!.subscriptionId });
+  async getSubscription(accounting?: AccountingContext): Promise<SubscriptionStatus> {
+    const subscriptionId = await this.subscriptionIdFor(accounting);
+    const status = await this.readSubscription(subscriptionId);
+    this.assertTenantSubscription(status, accounting);
+    return status;
+  }
+
+  private async readSubscription(subscriptionId: string): Promise<SubscriptionStatus> {
+    const object = await this.client.getObject({ id: subscriptionId, options: { showContent: true, showType: true } });
+    if (object.error) throw new AppError("OBJECTID_SUBSCRIPTION_NOT_FOUND", "The configured SubscriptionAccount could not be read", 503, "OBJECTID", { objectId: subscriptionId });
     if (!String(object.data?.type ?? "").endsWith("::oid_twin::SubscriptionAccount")) {
-      throw new AppError("OBJECTID_SUBSCRIPTION_TYPE_INVALID", "The configured subscription object is not a SubscriptionAccount", 503, "OBJECTID", { objectId: this.objects!.subscriptionId });
+      throw new AppError("OBJECTID_SUBSCRIPTION_TYPE_INVALID", "The configured subscription object is not a SubscriptionAccount", 503, "OBJECTID", { objectId: subscriptionId });
     }
     const content = object.data?.content;
     const fields = content?.dataType === "moveObject" ? content.fields as Record<string, unknown> : {};
@@ -103,8 +116,9 @@ export class IotaStatePublisher {
     const status = Number(fields.status ?? -1);
     const now = BigInt(Date.now());
     return {
-      objectId: this.objects!.subscriptionId,
+      objectId: subscriptionId,
       customerId: String(fields.customer_id ?? ""),
+      ownerControllerId: String(fields.owner_controller_id ?? fields.controller_id ?? ""),
       controllerId: String(fields.controller_id ?? ""),
       plan: { code: Number(fields.plan ?? -1), name: planName(Number(fields.plan ?? -1)) },
       status: { code: status, name: subscriptionStatusName(status) },
@@ -121,15 +135,15 @@ export class IotaStatePublisher {
     };
   }
 
-  updateTwin(twinId: string, input: Record<string, unknown>) {
+  updateTwin(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("update_twin_metadata", twinId, (tx) => [
       tx.pure.string(requiredString(input.name, "name")),
       tx.pure.string(stringValue(input.description, "")),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  publishState(twinId: string, input: Record<string, unknown>) {
+  publishState(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     const payloadInline = stringValue(value(input, "payloadInline", "payload_inline"), "");
     const payloadHash = stringValue(value(input, "payloadHash", "payload_hash"), createHash("sha256").update(payloadInline).digest("hex"));
     const observedAt = unsignedInteger(value(input, "observedAt", "observed_at"), Date.now());
@@ -146,10 +160,10 @@ export class IotaStatePublisher {
       tx.pure.u64(unsignedInteger(value(input, "validFrom", "valid_from"), observedAt)),
       tx.pure.u64(unsignedInteger(value(input, "validTo", "valid_to"), 0)),
       tx.pure.u8(qualityScore),
-    ]);
+    ], accounting);
   }
 
-  addDataset(twinId: string, input: Record<string, unknown>) {
+  addDataset(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("add_dataset", twinId, (tx) => [
       tx.pure.string(requiredString(value(input, "datasetType", "dataset_type"), "datasetType")),
       tx.pure.option("address", optionalObjectId(value(input, "sourceId", "source_id"))),
@@ -162,10 +176,10 @@ export class IotaStatePublisher {
       tx.pure.string(stringValue(input.version, "1")),
       tx.pure.string(metadataValue(value(input, "immutableMetadata", "immutable_metadata"))),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  addAspect(twinId: string, input: Record<string, unknown>) {
+  addAspect(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("add_aspect", twinId, (tx) => [
       tx.pure.string(requiredString(value(input, "aspectCode", "aspect_code"), "aspectCode")),
       tx.pure.string(stringValue(value(input, "aspectName", "aspect_name"), stringValue(value(input, "aspectCode", "aspect_code"), "aspect"))),
@@ -174,10 +188,10 @@ export class IotaStatePublisher {
       tx.pure.string(stringValue(value(input, "semanticRef", "semantic_ref"), "")),
       tx.pure.string(metadataValue(value(input, "immutableMetadata", "immutable_metadata"))),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  addInterface(twinId: string, input: Record<string, unknown>) {
+  addInterface(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("add_interface_v2", twinId, (tx) => [
       tx.pure.string(stringValue(value(input, "interfaceType", "interface_type"), "service")),
       tx.pure.string(requiredString(input.protocol, "protocol")),
@@ -188,10 +202,10 @@ export class IotaStatePublisher {
       tx.pure.string(stringValue(value(input, "sourceDid", "source_did"), "")),
       tx.pure.string(metadataValue(value(input, "immutableMetadata", "immutable_metadata"))),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  addModel(twinId: string, input: Record<string, unknown>) {
+  addModel(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("add_model_ref", twinId, (tx) => [
       tx.pure.string(requiredString(value(input, "modelType", "model_type"), "modelType")),
       tx.pure.string(requiredString(input.name, "name")),
@@ -203,19 +217,19 @@ export class IotaStatePublisher {
       tx.pure.string(metadataValue(input.provenance)),
       tx.pure.string(metadataValue(value(input, "immutableMetadata", "immutable_metadata"))),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  addIdentifier(twinId: string, input: Record<string, unknown>) {
+  addIdentifier(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("add_identifier", twinId, (tx) => [
       tx.pure.string(requiredString(input.scheme, "scheme")),
       tx.pure.string(requiredString(input.value, "value")),
       tx.pure.string(stringValue(value(input, "resolverUri", "resolver_uri"), "")),
       tx.pure.string(stringValue(input.issuer, "")),
-    ]);
+    ], accounting);
   }
 
-  addIdentifierMapping(twinId: string, input: Record<string, unknown>) {
+  addIdentifierMapping(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("add_identifier_mapping", twinId, (tx) => [
       tx.object(requiredObjectId(value(input, "sourceIdentifierId", "source_identifier_id"), "sourceIdentifierId")),
       tx.object(requiredObjectId(value(input, "targetIdentifierId", "target_identifier_id"), "targetIdentifierId")),
@@ -224,38 +238,38 @@ export class IotaStatePublisher {
       tx.pure.string(stringValue(value(input, "mappingSchemaUri", "mapping_schema_uri"), "")),
       tx.pure.string(metadataValue(value(input, "immutableMetadata", "immutable_metadata"))),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  addRelation(twinId: string, input: Record<string, unknown>) {
+  addRelation(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("add_relation", twinId, (tx) => [
       tx.pure.string(requiredString(value(input, "relationType", "relation_type"), "relationType")),
       tx.pure.address(requiredObjectId(value(input, "targetTwinId", "target_twin_id"), "targetTwinId")),
       tx.pure.u8(unsignedInteger(input.direction, 2)),
       tx.pure.string(metadataValue(value(input, "immutableMetadata", "immutable_metadata"))),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  createComposition(twinId: string, input: Record<string, unknown>) {
+  createComposition(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("create_composition", twinId, (tx) => [
       tx.pure.u8(unsignedInteger(value(input, "compositionType", "composition_type"), 1)),
       tx.pure.string(requiredString(input.name, "name")),
       tx.pure.string(stringValue(input.description, "")),
       tx.pure.string(metadataValue(value(input, "immutableMetadata", "immutable_metadata"))),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  emitTwinEvent(twinId: string, input: Record<string, unknown>) {
+  emitTwinEvent(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     return this.twinCall("record_business_event", twinId, (tx) => [
       tx.pure.u16(unsignedInteger(value(input, "eventType", "event_type"), 0)),
       tx.pure.string(stringValue(value(input, "payloadRef", "payload_ref"), "")),
       tx.pure.string(stringValue(value(input, "payloadHash", "payload_hash"), "")),
-    ]);
+    ], accounting);
   }
 
-  createMaturityAssessment(twinId: string, input: Record<string, unknown>) {
+  createMaturityAssessment(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     const evidence = recordValue(input.evidence);
     return this.twinCall("create_maturity_assessment", twinId, (tx) => [
       tx.pure.string(requiredString(value(input, "assessmentModel", "assessment_model"), "assessmentModel")),
@@ -266,13 +280,15 @@ export class IotaStatePublisher {
       tx.pure.string(stringValue(value(input, "evidenceHash", "evidence_hash") ?? evidence?.hash, "")),
       tx.pure.string(metadataValue(value(input, "immutableMetadata", "immutable_metadata"))),
       tx.pure.string(metadataValue(value(input, "mutableMetadata", "mutable_metadata"))),
-    ]);
+    ], accounting);
   }
 
-  private twinCall(functionName: string, twinId: string, argumentsFor: (tx: Transaction) => TransactionArgument[]) {
+  private async twinCall(functionName: string, twinId: string, argumentsFor: (tx: Transaction) => TransactionArgument[], accounting?: AccountingContext) {
+    const subscriptionId = await this.subscriptionIdFor(accounting);
+    await this.validateTwinAccounting(twinId, subscriptionId, accounting);
     return this.execute(functionName, (tx) => {
       tx.moveCall({ target: this.target(functionName), arguments: [
-        ...this.accountArguments(tx), tx.object(requiredObjectId(twinId, "twinId")),
+        ...this.accountArguments(tx, subscriptionId), tx.object(requiredObjectId(twinId, "twinId")),
         ...argumentsFor(tx), tx.object(this.requiredSignerConfig().clockId),
       ] });
     });
@@ -288,8 +304,38 @@ export class IotaStatePublisher {
     }
   }
 
-  private accountArguments(tx: Transaction) {
-    return [tx.object(this.objects!.subscriptionId), tx.object(this.objects!.controllerCapId)];
+  private accountArguments(tx: Transaction, subscriptionId: string) {
+    return [tx.object(subscriptionId), tx.object(this.objects!.controllerCapId)];
+  }
+
+  private async subscriptionIdFor(accounting?: AccountingContext) {
+    if (!this.objects) await this.initialize();
+    return requiredObjectId(accounting?.subscriptionId ?? this.objects!.defaultSubscriptionId, "subscriptionId");
+  }
+
+  private async validateTwinAccounting(twinId: string, subscriptionId: string, accounting?: AccountingContext) {
+    const object = await this.client.getObject({ id: requiredObjectId(twinId, "twinId"), options: { showContent: true, showType: true } });
+    if (object.error) throw new AppError("OBJECTID_TWIN_NOT_FOUND", "The Twin could not be read before submission", 404, "OBJECTID", { twinId });
+    const content = object.data?.content;
+    const fields = content?.dataType === "moveObject" ? content.fields as Record<string, unknown> : {};
+    const actualSubscriptionId = objectIdField(fields.subscription_id);
+    if (actualSubscriptionId.toLowerCase() !== subscriptionId.toLowerCase()) {
+      throw new AppError("OBJECTID_TENANT_TWIN_MISMATCH", "The authenticated tenant does not own this Twin subscription", 403, "AUTHORIZATION", { twinId, subscriptionId, actualSubscriptionId });
+    }
+    const subscription = await this.readSubscription(subscriptionId);
+    this.assertTenantSubscription(subscription, accounting);
+    if (!subscription.current || BigInt(subscription.remainingCredits) < 1n) {
+      throw new AppError("OBJECTID_SUBSCRIPTION_CREDIT_EXHAUSTED", "The tenant subscription is inactive or has no remaining credits", 402, "AUTHORIZATION", { subscriptionId });
+    }
+  }
+
+  private assertTenantSubscription(subscription: SubscriptionStatus, accounting?: AccountingContext) {
+    if (accounting && subscription.customerId !== accounting.customerId) {
+      throw new AppError("OBJECTID_TENANT_SUBSCRIPTION_MISMATCH", "The configured subscription does not belong to the authenticated customer", 403, "AUTHORIZATION", { tenantId: accounting.tenantId, subscriptionId: subscription.objectId });
+    }
+    if (accounting && subscription.ownerControllerId && !accounting.ownerDid.toLowerCase().endsWith(subscription.ownerControllerId.toLowerCase())) {
+      throw new AppError("OBJECTID_TENANT_OWNER_MISMATCH", "The authenticated owner DID does not match the subscription owner on-chain", 403, "AUTHORIZATION", { tenantId: accounting.tenantId, subscriptionId: subscription.objectId });
+    }
   }
 
   private target(functionName: string): `${string}::${string}::${string}` {
@@ -346,6 +392,15 @@ function recordValue(input: unknown): Record<string, unknown> | undefined {
 function decimalField(input: unknown) {
   const value = String(input ?? "0");
   return /^\d+$/.test(value) ? value : "0";
+}
+
+function objectIdField(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input && typeof input === "object") {
+    const value = input as Record<string, unknown>;
+    return String(value.id ?? value.bytes ?? value.value ?? "");
+  }
+  return "";
 }
 
 function subtractFloor(limit: string, used: string) {

@@ -18,7 +18,7 @@ export function testConfig(overrides: TestOverrides = {}): AppConfig {
     profiles: { directory: "./profiles" },
     connectors: { rest: { enabled: true }, mqtt: { enabled: false } },
     commands: { enabled: false, storeFile: "./data/test/commands.json", requestTopicTemplate: "objectid/twins/{twinId}/commands/request", resultTopic: "objectid/twins/+/commands/+/result", catalogs: [] },
-    security: { credentialProvider: "environment", authMode: "disabled", apiKeyCredential: "DTIS_API_KEY", jwtSecretCredential: "DTIS_JWT_SECRET", rateLimitPerMinute: 1000 },
+    security: { credentialProvider: "environment", authMode: "disabled", apiKeyCredential: "DTIS_API_KEY", jwtSecretCredential: "DTIS_JWT_SECRET", tenantRegistryCredential: "DTIS_TENANTS_JSON", rateLimitPerMinute: 1000 },
     cache: { type: "memory", ttlMs: 60_000 },
     policy: { cacheTtlMs: 1_000 },
     queue: { type: "memory", maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 5, pollIntervalMs: 1 },
