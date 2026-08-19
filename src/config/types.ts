@@ -15,6 +15,7 @@ export interface AppConfig {
       addressCredential: string;
       controllerCapCredential: string;
       subscriptionCredential: string;
+      subscriptionAdminCapCredential?: string;
       delegatedAccounts: boolean;
       clockId: string;
       gasBudget: number;
@@ -38,6 +39,12 @@ export interface AppConfig {
     defaultTenantId?: string;
     serviceDid?: string;
     rateLimitPerMinute: number;
+    testnetFreeSubscriptions?: {
+      enabled: boolean;
+      provisioningKeyCredential: string;
+      dynamicTenantFile: string;
+      periodDays: number;
+    };
   };
   cache: { type: "memory" | "redis"; ttlMs: number; redisUrl?: string };
   policy: { cacheTtlMs: number };

@@ -92,6 +92,46 @@ export class IotaStatePublisher {
     return { id: created.objectId, digest: result.digest, transaction: result };
   }
 
+  async provisionFreeTestnetSubscription(ownerDid: string, customerId: string, periodDays: number) {
+    if (this.config.network !== "testnet") throw new AppError("OBJECTID_FREE_SUBSCRIPTION_TESTNET_ONLY", "Free subscriptions are available only on testnet", 403, "AUTHORIZATION");
+    const signer = this.requiredSignerConfig();
+    if (!signer.subscriptionAdminCapCredential) throw new AppError("CREDENTIAL_MISSING", "SubscriptionAdminCap credential is not configured", 503, "AUTHORIZATION");
+    if (!this.objects) await this.initialize();
+    const adminCapId = await requiredCredential(this.credentials, signer.subscriptionAdminCapCredential);
+    const ownerControllerId = ownerDid.slice(ownerDid.lastIndexOf(":") + 1);
+    const cap = await this.client.getObject({ id: this.objects!.controllerCapId, options: { showContent: true } });
+    const content = cap.data?.content;
+    const fields = content?.dataType === "moveObject" ? content.fields as Record<string, unknown> : {};
+    const integrationControllerId = objectIdField(fields.controller_of);
+    const periodStart = Date.now();
+    const periodEnd = periodStart + periodDays * 86_400_000;
+    const result = await this.execute("create_customer_subscription", (tx) => tx.moveCall({
+      target: this.target("create_customer_subscription"),
+      arguments: [
+        tx.object(requiredObjectId(adminCapId, "subscriptionAdminCapId")), tx.pure.string(customerId),
+        tx.pure.address(requiredObjectId(ownerControllerId, "ownerControllerId")),
+        tx.pure.address(integrationControllerId), tx.pure.u8(1), tx.pure.u64(periodStart), tx.pure.u64(periodEnd),
+        tx.pure.u64(0), tx.pure.u64(0), tx.object(signer.clockId),
+      ],
+    }));
+    const created = result.objectChanges?.find((change: any) => change.type === "created" && String(change.objectType ?? "").endsWith("::oid_twin::SubscriptionAccount")) as any;
+    if (!created?.objectId) throw new AppError("OBJECTID_SUBSCRIPTION_CREATE_RESULT_INVALID", "Subscription creation succeeded without a SubscriptionAccount", 502, "OBJECTID");
+    return { subscriptionId: created.objectId, digest: String(result.digest) };
+  }
+
+  async renewFreeTestnetSubscription(subscriptionId: string, periodDays: number) {
+    if (this.config.network !== "testnet") throw new AppError("OBJECTID_FREE_SUBSCRIPTION_TESTNET_ONLY", "Free subscriptions are available only on testnet", 403, "AUTHORIZATION");
+    const signer = this.requiredSignerConfig();
+    if (!signer.subscriptionAdminCapCredential) throw new AppError("CREDENTIAL_MISSING", "SubscriptionAdminCap credential is not configured", 503, "AUTHORIZATION");
+    const adminCapId = await requiredCredential(this.credentials, signer.subscriptionAdminCapCredential);
+    const periodStart = Date.now(); const periodEnd = periodStart + periodDays * 86_400_000;
+    const result = await this.execute("renew_subscription", (tx) => tx.moveCall({ target: this.target("renew_subscription"), arguments: [
+      tx.object(requiredObjectId(adminCapId, "subscriptionAdminCapId")), tx.object(requiredObjectId(subscriptionId, "subscriptionId")),
+      tx.pure.u8(1), tx.pure.u64(periodStart), tx.pure.u64(periodEnd), tx.pure.u64(0), tx.pure.u64(0), tx.object(signer.clockId),
+    ] }));
+    return { digest: String(result.digest) };
+  }
+
   async getSubscription(accounting?: AccountingContext): Promise<SubscriptionStatus> {
     const subscriptionId = await this.subscriptionIdFor(accounting);
     const status = await this.readSubscription(subscriptionId);

@@ -1,4 +1,5 @@
 import express from "express";
+import { randomBytes } from "node:crypto";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import swaggerUi from "swagger-ui-express";
@@ -7,7 +8,7 @@ import { errorBody, AppError } from "../common/errors.js";
 import { logger, redactSecrets } from "../common/logger.js";
 import { ProviderObjectIdAdapter } from "../objectid/adapter.js";
 import type { ObjectIdAdapter } from "../objectid/types.js";
-import { EnvironmentCredentialProvider, FileCredentialProvider, resolveCredentialReferences } from "../security/credentials.js";
+import { EnvironmentCredentialProvider, FileCredentialProvider, requiredCredential, resolveCredentialReferences } from "../security/credentials.js";
 import { authMiddleware, createAuthProvider } from "../security/auth.js";
 import { TenantRegistry } from "../security/tenants.js";
 import type { AccountingContext } from "../objectid/types.js";
@@ -108,6 +109,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const realtime = new TwinRealtimeHub();
   const commands = new CommandService(config.commands, connectors.get("mqtt"));
   const retention = new StorageRetentionService(config.retention, storage, objectid);
+  const renewalChecks = new Map<string, number>();
 
   app.get("/health", (_request, response) => response.json({ status: "ok", stateless: true, timestamp: new Date().toISOString() }));
   app.get("/ready", async (_request, response, next) => {
@@ -133,8 +135,47 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   app.get("/openapi.json", (_request, response) => response.json(openApiDocument));
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
+  app.post("/internal/testnet/free-subscriptions", async (request, response, next) => {
+    try {
+      const free = config.security.testnetFreeSubscriptions;
+      if (config.objectid.network !== "testnet" || !free?.enabled) throw new AppError("OBJECTID_FREE_SUBSCRIPTION_DISABLED", "Free subscription onboarding is disabled", 404, "AUTHORIZATION");
+      const expected = await requiredCredential(credentials, free.provisioningKeyCredential);
+      if (request.header("x-provisioning-key") !== expected) throw new AppError("AUTH_INVALID_PROVISIONING_KEY", "Invalid provisioning key", 401, "AUTHORIZATION");
+      const ownerDid = String(request.body?.ownerDid ?? "").toLowerCase();
+      if (!/^did:iota:testnet:0x[0-9a-f]{64}$/.test(ownerDid)) throw new AppError("OBJECTID_OWNER_DID_INVALID", "A valid testnet owner DID is required", 422, "VALIDATION");
+      const tenantId = `free-${ownerDid.slice(-16)}`;
+      const customerId = tenantId;
+      let accounting = await tenants.findByOwnerDid(ownerDid);
+      let digest: string | undefined;
+      if (!accounting) {
+        if (!objectid.provisionFreeTestnetSubscription) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription provisioning is unavailable", 503, "OBJECTID");
+        const created = await objectid.provisionFreeTestnetSubscription(ownerDid, customerId, free.periodDays);
+        digest = created.digest;
+        accounting = { tenantId, customerId, ownerDid, subscriptionId: created.subscriptionId };
+      } else if (await tenants.isDynamic(ownerDid) && objectid.getSubscription && objectid.renewFreeTestnetSubscription) {
+        const status = await objectid.getSubscription(accounting);
+        if (!status.current && BigInt(status.periodEnd) <= BigInt(Date.now())) digest = (await objectid.renewFreeTestnetSubscription(accounting.subscriptionId, free.periodDays)).digest;
+      }
+      const apiKey = randomBytes(32).toString("hex");
+      await tenants.saveDynamic(accounting, apiKey);
+      response.status(digest ? 201 : 200).set("Cache-Control", "no-store").json({ ...accounting, apiKey, digest, plan: "base", free: true });
+    } catch (error) { next(error); }
+  });
+
   const api = express.Router();
   api.use(authMiddleware(auth));
+  api.use(async (request, _response, next) => {
+    try {
+      const accounting = request.auth?.accounting; const free = config.security.testnetFreeSubscriptions;
+      const now = Date.now(); const lastCheck = accounting ? renewalChecks.get(accounting.tenantId) ?? 0 : 0;
+      if (accounting && free?.enabled && now - lastCheck >= 300_000 && await tenants.isDynamic(accounting.ownerDid) && objectid.getSubscription && objectid.renewFreeTestnetSubscription) {
+        renewalChecks.set(accounting.tenantId, now);
+        const status = await objectid.getSubscription(accounting);
+        if (!status.current && BigInt(status.periodEnd) <= BigInt(Date.now())) await objectid.renewFreeTestnetSubscription(accounting.subscriptionId, free.periodDays);
+      }
+      next();
+    } catch (error) { next(error); }
+  });
   api.use(idempotencyMiddleware(idempotency, config.idempotency.ttlMs));
   api.get("/capabilities", (_request, response) => response.json({
     apiVersion: "v1",

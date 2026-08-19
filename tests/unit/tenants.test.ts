@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { testConfig } from "../fixtures/config.js";
 import { TenantRegistry } from "../../src/security/tenants.js";
 import type { CredentialProvider } from "../../src/security/credentials.js";
@@ -40,5 +43,16 @@ describe("tenant accounting registry", () => {
 
   it("resolves the configured connector tenant without caller input", async () => {
     await expect(registry().default()).resolves.toMatchObject({ tenantId: "customer-a", subscriptionId: objectId("1") });
+  });
+
+  it("persists and authenticates a dynamically provisioned testnet tenant", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "dtis-tenants-"));
+    const config = testConfig({ security: { testnetFreeSubscriptions: { enabled: true, provisioningKeyCredential: "PROVISIONING_KEY", dynamicTenantFile: join(directory, "tenants.json"), periodDays: 30 } } });
+    const credentials: CredentialProvider = { async get(name) { return name === "DTIS_TENANTS_JSON" ? JSON.stringify({ tenants: [] }) : undefined; } };
+    const dynamic = new TenantRegistry(config.security, credentials);
+    const accounting = { tenantId: "free-a", customerId: "free-a", ownerDid: `did:iota:testnet:${objectId("a")}`, subscriptionId: objectId("2") };
+    await dynamic.saveDynamic(accounting, "generated-tenant-key");
+    await expect(dynamic.authenticateApiKey("generated-tenant-key")).resolves.toEqual(accounting);
+    await expect(dynamic.isDynamic(accounting.ownerDid)).resolves.toBe(true);
   });
 });

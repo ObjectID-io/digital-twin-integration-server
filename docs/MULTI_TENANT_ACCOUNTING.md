@@ -72,5 +72,18 @@ public DTIS and assign another integration controller without recreating the sub
 5. Create new Twin objects through the authenticated tenant API. They are owned by the customer DID
    and the assigned DTIS is recorded as steward.
 
+## Free testnet onboarding
+
+The hosted testnet DTIS may enable `security.testnetFreeSubscriptions`. A trusted Webview BFF calls
+`POST /internal/testnet/free-subscriptions` with `DTIS_TESTNET_PROVISIONING_KEY` after it has verified
+control of the customer's DID. DTIS provisions a 30-day Base account, stores only a SHA-256 hash of
+the generated tenant API key, and returns the key once to the BFF for encrypted storage. Dynamic
+tenants are persisted in `/data/testnet-tenants.json`. Expired free accounts are renewed lazily on
+the next authenticated tenant request, retaining the SubscriptionAccount and resetting the Base
+allowance. This endpoint is disabled outside testnet.
+
+Both Gas Stations must allow the controlled package targets `create_customer_subscription`,
+`renew_subscription`, and `create_twin_for_subscription_owner` before onboarding is enabled.
+
 Do not enable `delegatedAccounts` against the previous package: it does not expose
 `create_twin_for_subscription_owner`.
