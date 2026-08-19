@@ -7,7 +7,7 @@ server:
 objectid:
   network: testnet
   rpcUrl: https://api.testnet.iota.cafe
-  packageId: "0x2b20f39e5e954b232370b019d21c7cc87ff41e7ee0a7802b9a47be14059e1772"
+  packageId: "0xbab702f8fb2478bac6df8b64c5b92ca998366791913659f373bddc05d89c5147"
   timeoutMs: 30000
   signer:
     enabled: true
