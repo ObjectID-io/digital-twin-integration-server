@@ -1,11 +1,16 @@
-import { readFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import mqtt from "mqtt";
 import { createTelemetry } from "./telemetry.js";
 import { createControlServer } from "./control-server.js";
 import { executeSimulatorCommand, verifySimulatorCommand } from "./commands.js";
-import { loadSimulatorConfig } from "./config.js";
+import { loadSimulatorConfig, validateIntegrationConfig } from "./config.js";
 
 const config = await loadSimulatorConfig();
+const integrationConfigFile = process.env.OBJECTID_INTEGRATION_CONFIG_FILE ?? "/data/integration.json";
+const controlPasswordFile = process.env.SIM_CONTROL_PASSWORD_FILE ?? "/run/secrets/sim_control_password";
+const controlPassword = (await readFile(controlPasswordFile, "utf8")).trimEnd();
+if (!controlPassword) throw new Error("Simulator control password file is empty");
 
 const status = {
   connected: false,
@@ -28,7 +33,7 @@ const client = mqtt.connect(config.mqttUrl, {
 let sequence = 0;
 let timer;
 let publishing = false;
-const control = { scenario: "normal", paused: false, changedAt: new Date().toISOString() };
+const control = { scenario: "normal", paused: config.assetId === "unknown", changedAt: new Date().toISOString() };
 const processedCommands = new Map();
 
 client.on("connect", () => {
@@ -49,11 +54,29 @@ client.on("error", (error) => {
   log("mqtt_error", { error: error.message });
 });
 
-Object.assign(status, { machineName: config.machineName, topic: config.topic });
+Object.assign(status, { machineName: config.machineName, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, credentialSource: config.credentialSource });
 const healthServer = createControlServer({
   status, control, port: config.healthPort, publishNow: publishSample,
   recordTransition: publishStateTransition,
+  adminPassword: controlPassword,
+  installIntegrationConfig,
+  restartForConfiguration: () => process.exit(0),
 });
+
+async function installIntegrationConfig(value) {
+  const validated = validateIntegrationConfig(value);
+  const stored = {
+    objectid: { tenantId: validated.objectid.tenantId, subscriptionId: validated.objectid.subscriptionId, twinIds: validated.objectid.twinIds },
+    mqtt: { endpoint: validated.mqtt.endpoint, username: validated.mqtt.username, password: validated.mqtt.password, topics: validated.mqtt.topics },
+    generatedAt: validated.generatedAt,
+  };
+  await mkdir(dirname(integrationConfigFile), { recursive: true });
+  const temporary = `${integrationConfigFile}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
+  await chmod(temporary, 0o600);
+  await rename(temporary, integrationConfigFile);
+  return { tenantId: validated.objectid.tenantId, twinIds: validated.objectid.twinIds, endpoint: validated.mqtt.endpoint };
+}
 
 async function publishSample() {
   if (!client.connected || publishing || control.paused) return;

@@ -187,15 +187,20 @@ services:
       SIM_STATE_TOPIC: objectid/twins/telemetry/state
       MQTT_QOS: "1"
       SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-5000}
-      SIM_ASSET_ID: ${SIM_ASSET_ID:-unconfigured}
+      SIM_ASSET_ID: ${SIM_ASSET_ID:-unknown}
       SIM_MACHINE_NAME: ${SIM_MACHINE_NAME:-mqtt-vps-twin}
       SIM_COMMAND_INTERFACE_ID: urn:objectid:interface:simulator-control:v1
       SIM_COMMAND_SIGNING_KEY_FILE: /run/secrets/command_signing_key
       SIM_COMMAND_SIGNING_KEY_ID: dtis-command-v1
+      OBJECTID_INTEGRATION_CONFIG_FILE: /data/integration.json
+      SIM_CONTROL_PASSWORD_FILE: /run/secrets/sim_control_password
       HEALTH_PORT: "8081"
     secrets:
       - mqtt_password
       - command_signing_key
+      - sim_control_password
+    volumes:
+      - simulator-data:/data
     networks:
       - default
       - traefik_proxy
@@ -227,6 +232,7 @@ volumes:
   mosquitto-data:
   redis-data:
   command-data:
+  simulator-data:
 
 networks:
   default:
@@ -240,3 +246,5 @@ secrets:
     file: ./secrets/mqtt_password.txt
   command_signing_key:
     file: ./secrets/command_signing_key.txt
+  sim_control_password:
+    file: ./secrets/sim_control_password.txt

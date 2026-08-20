@@ -16,7 +16,9 @@ docker compose -f docker-compose.yml -f compose.simulator-tenant.yml \
   --profile simulator up -d --build mqtt-digital-twin-simulator
 ```
 
-The simulator reads the MQTT endpoint, one-time password, tenant username, Twin ID and the exact state/dataset/command topics from that file. When the file contains more than one Twin, set `SIM_TWIN_ID` to select one. Environment variables still take precedence when explicitly provided. Never commit the downloaded file: it contains live credentials.
+The simulator reads the MQTT endpoint, one-time password, tenant username, Twin ID and the exact state/dataset/command topics from that file. When the file contains more than one Twin, set `SIM_TWIN_ID` to select one. Once installed, the file takes precedence over legacy service-account variables; dedicated `SIM_MQTT_*` override variables remain available for diagnostics. Never commit the downloaded file: it contains live credentials.
+
+Alternatively, open `https://dt-simulator.objectid.io`, select the downloaded JSON in **Integration credentials**, enter the simulator administration password and choose **Upload & apply**. The server validates the file, discards the unused REST API key, stores the MQTT subset with mode `0600`, and restarts automatically. The administration password is read from `/run/secrets/sim_control_password` and is never stored by the browser.
 
 | Variable | Default | Description |
 | --- | --- | --- |

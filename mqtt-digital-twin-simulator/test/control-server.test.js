@@ -42,3 +42,24 @@ test("exposes the demo control API and applies commands", async (context) => {
   assert.equal((await response.json()).scenario, "pressure-loss");
   assert.deepEqual(transitions, [{ from: "normal", to: "pressure-loss" }]);
 });
+
+test("protects and installs an uploaded integration configuration", async (context) => {
+  let installed;
+  let restartRequested = false;
+  const server = createControlServer({
+    status: { connected: false }, control: { scenario: "normal", paused: true }, port: 0,
+    publishNow: async () => undefined, adminPassword: "admin-secret",
+    installIntegrationConfig: async (value) => { installed = value; return { tenantId: "free-a", twinIds: ["0xtwin"] }; },
+    restartForConfiguration: () => { restartRequested = true; },
+  });
+  context.after(() => server.close());
+  await once(server, "listening");
+  const url = `http://127.0.0.1:${server.address().port}/api/integration`;
+  const denied = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-simulator-admin-password": "wrong" }, body: "{}" });
+  assert.equal(denied.status, 401);
+  const accepted = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-simulator-admin-password": "admin-secret" }, body: JSON.stringify({ mqtt: { endpoint: "wss://dtis.objectid.io/mqtt" } }) });
+  assert.equal(accepted.status, 202);
+  assert.deepEqual(installed, { mqtt: { endpoint: "wss://dtis.objectid.io/mqtt" } });
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  assert.equal(restartRequested, true);
+});

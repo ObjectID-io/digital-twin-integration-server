@@ -4,7 +4,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev && addgroup -S simulator && adduser -S -G simulator simulator
+RUN npm ci --omit=dev && addgroup -S simulator && adduser -S -G simulator simulator && mkdir -p /data && chown simulator:simulator /data
 
 COPY --chown=simulator:simulator src ./src
 

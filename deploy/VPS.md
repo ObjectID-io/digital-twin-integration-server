@@ -89,7 +89,7 @@ docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-serv
 
 Set `SIM_INTERVAL_MS` or `SIM_MACHINE_NAME` in `.env` to customize it. Do not switch `SIM_MQTT_TOPIC` to the state topic unless on-chain publication for every sample and its monthly operation-credit usage are intended.
 
-The unauthenticated demo control console is available at `https://dt-simulator.objectid.io`. It can inject overheat, high-vibration, spindle-overload, pressure-loss and emergency-stop telemetry, or pause and resume publication. Every scenario transition also publishes one state message; the integration server records the resulting `OIDTwinState` and event 30 in the on-chain Digital Thread, consuming the package-defined operation credit.
+The demo control console is available at `https://dt-simulator.objectid.io`. Fault injection remains public for demonstration purposes. Uploading tenant integration credentials is separately protected by the password in `secrets/sim_control_password.txt`; the uploaded MQTT configuration is stored in the private `simulator-data` Docker volume and applied through an automatic simulator restart. Every scenario transition also publishes one state message; the integration server records the resulting `OIDTwinState` and event 30 in the on-chain Digital Thread, consuming the package-defined operation credit.
 
 Successful on-chain publication is logged as `iota_sponsored_transaction_executed` with the operation and transaction digest. A transition emitted before the signer was enabled is not replayed automatically; select a different scenario after deployment to generate a new state event.
 The testnet signer uses a `100000000` gas budget so state publication can cover temporary storage charges before rebates are applied.

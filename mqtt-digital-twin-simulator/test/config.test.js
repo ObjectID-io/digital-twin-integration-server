@@ -34,12 +34,12 @@ test("loads dedicated tenant credentials and topics from the downloaded configur
   assert.equal(config.credentialSource, "integration-file");
 });
 
-test("allows explicit environment values to override a downloaded configuration", async () => {
+test("keeps uploaded credentials authoritative while allowing simulator settings and explicit overrides", async () => {
   const config = await loadSimulatorConfig(
-    { OBJECTID_INTEGRATION_CONFIG_FILE: "/credentials.json", MQTT_URL: "mqtt://broker:1883", MQTT_TOPIC: "custom/topic", SIM_INTERVAL_MS: "10000" },
+    { OBJECTID_INTEGRATION_CONFIG_FILE: "/credentials.json", MQTT_URL: "mqtt://legacy:1883", MQTT_TOPIC: "legacy/topic", SIM_MQTT_TOPIC_OVERRIDE: "custom/topic", SIM_INTERVAL_MS: "10000" },
     async () => JSON.stringify(integration),
   );
-  assert.equal(config.mqttUrl, "mqtt://broker:1883");
+  assert.equal(config.mqttUrl, "wss://dtis.objectid.io/mqtt");
   assert.equal(config.topic, "custom/topic");
   assert.equal(config.intervalMs, 10000);
 });
