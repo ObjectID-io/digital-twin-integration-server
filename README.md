@@ -2,6 +2,8 @@
 
 Multi-tenant subscription accounting and trusted Integration Server provisioning are described in
 [`docs/MULTI_TENANT_ACCOUNTING.md`](docs/MULTI_TENANT_ACCOUNTING.md).
+The hosted service runbook is in
+[`docs/HOSTED_DTIS_OPERATIONS.md`](docs/HOSTED_DTIS_OPERATIONS.md).
 
 ## Purpose
 
@@ -174,6 +176,20 @@ The API is versioned under `/api/v1`. Mutations accept `Idempotency-Key`.
 Errors use `{ error: { code, message, category, details } }`.
 `GET /api/v1/subscription` exposes the configured plan, period, Twin usage and
 monthly operation-credit usage directly from the shared on-chain account.
+
+Tenant-facing Twin operations include:
+
+- `POST /api/v1/twins` — create a Twin under the authenticated subscription;
+- `PATCH /api/v1/twins/:id` — update name, description and mutable metadata;
+- `DELETE /api/v1/twins/:id` — delete with exact-ID confirmation;
+- `GET /api/v1/twins/:id/realtime/{status,latest,stream}` — inspect realtime;
+- state, dataset, model, interface, event, maturity and command routes documented
+  by `/openapi.json`.
+
+External device credentials are provisioned only through the protected testnet
+onboarding boundary used by the Webview BFF. They are separate from the browser
+session, displayed once, scoped to one tenant, and revocable. MQTT ACLs contain
+only that tenant's current Twin topics.
 
 ## Development
 

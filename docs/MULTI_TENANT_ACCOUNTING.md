@@ -85,5 +85,27 @@ allowance. This endpoint is disabled outside testnet.
 Both Gas Stations must allow the controlled package targets `create_customer_subscription`,
 `renew_subscription`, and `create_twin_for_subscription_owner` before onboarding is enabled.
 
+## External API and MQTT credentials
+
+Free-subscription onboarding creates the BFF's tenant credential, but devices
+and simulators use a separately managed external credential set. The protected
+integration-credential endpoints can generate/rotate or revoke:
+
+- one tenant API key;
+- one MQTT username and password;
+- ACL entries limited to the tenant's current Twin IDs and exact topics.
+
+Secrets are returned only on generation/rotation. Status calls return metadata
+and Twin IDs, not secret material. Revocation does not delete the on-chain
+subscription or Twins. See `HOSTED_DTIS_OPERATIONS.md` for the complete flow.
+
+## Metadata and public discovery mutations
+
+`PATCH /api/v1/twins/:id` invokes `update_twin_metadata`. DTIS applies the same
+tenant/Twin subscription validation as other mutations and the policy engine
+restricts metadata changes to owner/steward authority. The hosted Webview uses
+this route to change `objectid.visibility` and to publish an explicit
+`objectid.location` while preserving unrelated mutable metadata.
+
 Do not enable `delegatedAccounts` against the previous package: it does not expose
 `create_twin_for_subscription_owner`.
