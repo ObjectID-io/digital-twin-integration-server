@@ -10,7 +10,7 @@ import { ProviderObjectIdAdapter } from "../objectid/adapter.js";
 import type { ObjectIdAdapter } from "../objectid/types.js";
 import { EnvironmentCredentialProvider, FileCredentialProvider, requiredCredential, resolveCredentialReferences } from "../security/credentials.js";
 import { authMiddleware, createAuthProvider } from "../security/auth.js";
-import { TenantRegistry } from "../security/tenants.js";
+import { TenantRegistry, type TenantCredentialStatus } from "../security/tenants.js";
 import type { AccountingContext } from "../objectid/types.js";
 import { idempotencyMiddleware, type IdempotencyStore } from "../security/idempotency.js";
 import { createIdempotencyStore } from "../security/idempotencyFactory.js";
@@ -137,12 +137,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
 
   app.post("/internal/testnet/free-subscriptions", async (request, response, next) => {
     try {
-      const free = config.security.testnetFreeSubscriptions;
-      if (config.objectid.network !== "testnet" || !free?.enabled) throw new AppError("OBJECTID_FREE_SUBSCRIPTION_DISABLED", "Free subscription onboarding is disabled", 404, "AUTHORIZATION");
-      const expected = await requiredCredential(credentials, free.provisioningKeyCredential);
-      if (request.header("x-provisioning-key") !== expected) throw new AppError("AUTH_INVALID_PROVISIONING_KEY", "Invalid provisioning key", 401, "AUTHORIZATION");
-      const ownerDid = String(request.body?.ownerDid ?? "").toLowerCase();
-      if (!/^did:iota:testnet:0x[0-9a-f]{64}$/.test(ownerDid)) throw new AppError("OBJECTID_OWNER_DID_INVALID", "A valid testnet owner DID is required", 422, "VALIDATION");
+      const { free, ownerDid } = await assertProvisioningRequest(request, request.body?.ownerDid);
       const tenantId = `free-${ownerDid.slice(-16)}`;
       const customerId = tenantId;
       let accounting = await tenants.findByOwnerDid(ownerDid);
@@ -159,6 +154,46 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       const apiKey = randomBytes(32).toString("hex");
       await tenants.saveDynamic(accounting, apiKey);
       response.status(digest ? 201 : 200).set("Cache-Control", "no-store").json({ ...accounting, apiKey, digest, plan: "base", free: true });
+    } catch (error) { next(error); }
+  });
+
+  app.get("/internal/testnet/integration-credentials", async (request, response, next) => {
+    try {
+      const { free, ownerDid } = await assertProvisioningRequest(request, request.query.ownerDid);
+      const status = await tenants.credentialStatus(ownerDid);
+      response.set("Cache-Control", "no-store").json(credentialStatusResponse(status, free));
+    } catch (error) { next(error); }
+  });
+
+  app.post("/internal/testnet/integration-credentials/rotate", async (request, response, next) => {
+    try {
+      const { free, ownerDid } = await assertProvisioningRequest(request, request.body?.ownerDid);
+      const accounting = await tenants.findByOwnerDid(ownerDid);
+      if (!accounting || !await tenants.isDynamic(ownerDid)) throw new AppError("AUTH_TENANT_UNKNOWN", "A free testnet subscription is required", 404, "AUTHORIZATION");
+      const summaries = await objectid.findTwinsByDid(ownerDid);
+      const twinIds: string[] = [];
+      for (const summary of summaries) {
+        try { await assertAccountingTwin(accounting, summary.twinId); twinIds.push(summary.twinId.toLowerCase()); }
+        catch (error) { if (!(error instanceof AppError) || error.code !== "OBJECTID_TENANT_TWIN_MISMATCH") throw error; }
+      }
+      const apiKey = randomBytes(32).toString("hex");
+      const mqttPassword = randomBytes(32).toString("base64url");
+      const mqttUsername = `oid_${accounting.tenantId.replace(/[^a-z0-9_-]/gi, "_")}`;
+      const status = await tenants.rotateExternalCredentials(ownerDid, apiKey, mqttUsername, mqttPassword, twinIds);
+      response.set("Cache-Control", "no-store").json({
+        ...credentialStatusResponse(status, free),
+        oneTime: true,
+        apiKey,
+        mqttPassword,
+      });
+    } catch (error) { next(error); }
+  });
+
+  app.delete("/internal/testnet/integration-credentials", async (request, response, next) => {
+    try {
+      const { free, ownerDid } = await assertProvisioningRequest(request, request.body?.ownerDid);
+      const status = await tenants.revokeExternalCredentials(ownerDid);
+      response.set("Cache-Control", "no-store").json(credentialStatusResponse(status, free));
     } catch (error) { next(error); }
   });
 
@@ -368,6 +403,10 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   async function assertTenantTwin(request: express.Request, twinId: string) {
     const accounting = request.auth?.accounting;
     if (!accounting) return;
+    await assertAccountingTwin(accounting, twinId);
+  }
+
+  async function assertAccountingTwin(accounting: AccountingContext, twinId: string) {
     const twin = await objectid.getTwin(twinId) as any;
     const fields = twin?.data?.content?.fields ?? twin?.content?.fields ?? twin?.fields ?? twin ?? {};
     const rawSubscription = fields.subscription_id ?? fields.subscriptionId;
@@ -380,6 +419,8 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   }
 
   async function ingestMqttMessage(message: MappedMqttMessage) {
+    const accounting = await connectorAccounting(String(message.mapping.tenantId ?? ""));
+    if (accounting) await assertAccountingTwin(accounting, message.mapping.twinId);
     realtime.publish(message);
     if (message.mapping.mode === "dataset") {
       if (!config.dataset.aggregation.enabled) throw new AppError("DATASET_AGGREGATION_DISABLED", "Dataset aggregation is disabled", 422, "CONNECTOR");
@@ -390,8 +431,17 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     const mapped = mqttMessageToState(message);
     const source = message.topic ?? message.nodeId ?? "unknown";
     const key = `connector-state:${mapped.twinId}:${source}:${message.observedAt}`;
-    const accounting = await connectorAccounting(String(message.mapping.tenantId ?? ""));
     await worker.enqueue(worker.createJob("PUBLISH_STATE", mapped.twinId, mapped.state, key, accounting));
+  }
+
+  async function assertProvisioningRequest(request: express.Request, rawOwnerDid: unknown) {
+    const free = config.security.testnetFreeSubscriptions;
+    if (config.objectid.network !== "testnet" || !free?.enabled) throw new AppError("OBJECTID_FREE_SUBSCRIPTION_DISABLED", "Free subscription onboarding is disabled", 404, "AUTHORIZATION");
+    const expected = await requiredCredential(credentials, free.provisioningKeyCredential);
+    if (request.header("x-provisioning-key") !== expected) throw new AppError("AUTH_INVALID_PROVISIONING_KEY", "Invalid provisioning key", 401, "AUTHORIZATION");
+    const ownerDid = String(rawOwnerDid ?? "").toLowerCase();
+    if (!/^did:iota:testnet:0x[0-9a-f]{64}$/.test(ownerDid)) throw new AppError("OBJECTID_OWNER_DID_INVALID", "A valid testnet owner DID is required", 422, "VALIDATION");
+    return { free, ownerDid };
   }
 
   async function connectorAccounting(tenantId: string) {
@@ -436,6 +486,27 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
 }
 
 function optionalTwinId(value: unknown) { return typeof value === "string" && value ? value : undefined; }
+
+function credentialStatusResponse(status: TenantCredentialStatus, free: NonNullable<AppConfig["security"]["testnetFreeSubscriptions"]>) {
+  const apiUrl = String(free.publicApiUrl ?? "https://dtis.objectid.io/api/v1").replace(/\/$/, "");
+  const mqttUrl = free.mqtt?.publicUrl ?? "wss://dtis.objectid.io/mqtt";
+  return {
+    ...status,
+    endpoint: apiUrl,
+    mqtt: {
+      endpoint: mqttUrl,
+      username: status.mqttUsername,
+      twinIds: status.twinIds,
+      topics: status.twinIds.map((twinId) => ({
+        twinId,
+        state: `objectid/tenants/${status.tenantId}/twins/${twinId}/telemetry/state`,
+        dataset: `objectid/tenants/${status.tenantId}/twins/${twinId}/telemetry/dataset`,
+        commandRequests: `objectid/tenants/${status.tenantId}/twins/${twinId}/commands/request`,
+        commandResults: `objectid/tenants/${status.tenantId}/twins/${twinId}/commands/+/result`,
+      })),
+    },
+  };
+}
 
 function threadOptions(query: Record<string, unknown>): PaginationOptions {
   const number = (value: unknown) => value === undefined ? undefined : Number(value);

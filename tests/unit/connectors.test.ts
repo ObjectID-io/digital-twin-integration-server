@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mqttMatch } from "../../src/connectors/mqtt.js";
+import { dynamicTenantMapping, mqttMatch } from "../../src/connectors/mqtt.js";
 import { mqttMessageToState } from "../../src/twin/mqttMapping.js";
 import { OpcUaConnector } from "../../src/connectors/opcua.js";
 import { opcuaSubscriptionErrors } from "../../src/health/metrics.js";
@@ -9,6 +9,11 @@ describe("connector mappings", () => {
   it("maps MQTT data to OIDTwinState input", () => {
     const result = mqttMessageToState({ mapping: { topic: "factory/#", twinId: "0xtwin", aspect: "telemetry", sampleType: "observed" }, topic: "factory/m1/temp", value: 42, observedAt: 100 });
     expect(result.twinId).toBe("0xtwin"); expect(result.state.payloadInline).toBe("42");
+  });
+  it("extracts and validates tenant-scoped MQTT topics", () => {
+    const twinId = `0x${"a".repeat(64)}`;
+    expect(dynamicTenantMapping({ topic: "objectid/tenants/+/twins/+/telemetry/state", twinId: "dynamic", dynamicTenantTopic: true }, `objectid/tenants/free-a/twins/${twinId}/telemetry/state`)).toMatchObject({ tenantId: "free-a", twinId, mode: "state" });
+    expect(dynamicTenantMapping({ topic: "#", twinId: "dynamic" }, "objectid/tenants/free-a/twins/not-an-id/telemetry/state")).toBeUndefined();
   });
   it("observes OPC-UA subscription callback failures", async () => {
     let changed: ((value: any) => void) | undefined;

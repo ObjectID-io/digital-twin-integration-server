@@ -44,6 +44,21 @@ connectors:
     connectTimeoutMs: 10000
     reconnectPeriodMs: 5000
     mappings:
+      - topic: objectid/tenants/+/twins/+/telemetry/state
+        twinId: dynamic
+        dynamicTenantTopic: true
+        mode: state
+        aspect: telemetry
+        sampleType: observed
+        qos: 1
+      - topic: objectid/tenants/+/twins/+/telemetry/dataset
+        twinId: dynamic
+        dynamicTenantTopic: true
+        mode: dataset
+        datasetType: telemetry
+        windowSeconds: 300
+        schemaUri: objectid-profile://interfaces/mqtt/v1
+        qos: 1
       - topic: objectid/twins/telemetry/state
         tenantId: objectid-dtis-public
         twinId: "${credential:MQTT_TWIN_ID}"
@@ -115,6 +130,12 @@ security:
     provisioningKeyCredential: DTIS_TESTNET_PROVISIONING_KEY
     dynamicTenantFile: /data/testnet-tenants.json
     periodDays: 30
+    publicApiUrl: https://dtis.objectid.io/api/v1
+    mqtt:
+      passwordFile: /mqtt-auth/password_file
+      aclFile: /mqtt-auth/acl_file
+      serviceUsername: objectid
+      publicUrl: wss://dtis.objectid.io/mqtt
 
 cache:
   type: redis

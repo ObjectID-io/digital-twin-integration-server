@@ -9,7 +9,7 @@ RUN npm run build && npm prune --omit=dev
 FROM node:20-alpine AS runtime
 ENV NODE_ENV=production DTIS_CONFIG=/config/config.yaml DTIS_PROFILES_DIRECTORY=/profiles DTIS_DATA_DIRECTORY=/data
 WORKDIR /app
-RUN addgroup -S objectid && adduser -S -G objectid objectid
+RUN apk add --no-cache mosquitto && addgroup -S objectid && adduser -S -G objectid objectid
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY profiles /profiles

@@ -11,9 +11,17 @@ services:
     command:
       - |
         cp /bootstrap/mosquitto.conf /mosquitto/config/mosquitto.conf
-        mosquitto_passwd -b -c /mosquitto/config/password_file "$$MQTT_USERNAME" "$$(cat /run/secrets/mqtt_password)"
+        if [ -s /mosquitto/config/password_file ]; then
+          mosquitto_passwd -b /mosquitto/config/password_file "$$MQTT_USERNAME" "$$(cat /run/secrets/mqtt_password)"
+        else
+          mosquitto_passwd -b -c /mosquitto/config/password_file "$$MQTT_USERNAME" "$$(cat /run/secrets/mqtt_password)"
+        fi
+        if [ ! -s /mosquitto/config/acl_file ]; then
+          printf 'user %s\ntopic readwrite #\n' "$$MQTT_USERNAME" > /mosquitto/config/acl_file
+        fi
         chown -R 1883:1883 /mosquitto/config /mosquitto/data
-        chmod 0640 /mosquitto/config/password_file
+        chmod 0660 /mosquitto/config/password_file /mosquitto/config/acl_file
+        chmod 2770 /mosquitto/config
     volumes:
       - ./deploy/mosquitto.conf:/bootstrap/mosquitto.conf:ro
       - mosquitto-config:/mosquitto/config
@@ -30,7 +38,10 @@ services:
       - FOWNER
 
   mosquitto:
-    image: eclipse-mosquitto:2.0
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.mosquitto
+    image: objectid/mosquitto-dtis:v1
     restart: unless-stopped
     user: "1883:1883"
     depends_on:
@@ -58,6 +69,18 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    networks:
+      - default
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.dtis-mqtt.rule=Host(`dtis.objectid.io`) && PathPrefix(`/mqtt`)"
+      - "traefik.http.routers.dtis-mqtt.priority=100"
+      - "traefik.http.routers.dtis-mqtt.entrypoints=websecure"
+      - "traefik.http.routers.dtis-mqtt.tls=true"
+      - "traefik.http.routers.dtis-mqtt.tls.certresolver=myresolver"
+      - "traefik.http.services.dtis-mqtt.loadbalancer.server.port=9001"
 
   redis:
     image: redis:7-alpine
@@ -113,6 +136,9 @@ services:
     volumes:
       - ./config/config.vps-testnet.yaml:/config/config.yaml:ro
       - command-data:/data
+      - mosquitto-config:/mqtt-auth
+    group_add:
+      - "1883"
     networks:
       - default
       - traefik_proxy

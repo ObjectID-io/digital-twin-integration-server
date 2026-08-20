@@ -14,6 +14,7 @@ export interface MqttMapping {
   profile?: string;
   qos?: 0 | 1 | 2;
   tenantId?: string;
+  dynamicTenantTopic?: boolean;
 }
 
 export class MqttConnector implements TwinConnector {
@@ -59,7 +60,9 @@ export class MqttConnector implements TwinConnector {
     if (!this.client) throw new AppError("MQTT_NOT_CONNECTED", "MQTT connector is unavailable", 503, "CONNECTOR");
     for (const mapping of this.mappings) await this.client.subscribeAsync(mapping.topic, { qos: mapping.qos ?? 0 });
     const listener = (topic: string, payload: Buffer) => {
-      const mapping = this.mappings.find((item) => mqttMatch(item.topic, topic));
+      const configured = this.mappings.find((item) => mqttMatch(item.topic, topic));
+      if (!configured) return;
+      const mapping = configured.dynamicTenantTopic ? dynamicTenantMapping(configured, topic) : configured;
       if (!mapping) return;
       let value: unknown = payload.toString();
       try { value = JSON.parse(payload.toString()); } catch { /* raw text is valid */ }
@@ -79,4 +82,12 @@ export function mqttMatch(pattern: string, topic: string) {
     if (p[index] !== "+" && p[index] !== t[index]) return false;
   }
   return p.length === t.length;
+}
+
+export function dynamicTenantMapping(mapping: MqttMapping, topic: string): MqttMapping | undefined {
+  const parts = topic.split("/");
+  if (parts.length !== 7 || parts[0] !== "objectid" || parts[1] !== "tenants" || parts[3] !== "twins" || parts[5] !== "telemetry") return undefined;
+  const tenantId = parts[2] ?? ""; const twinId = parts[4] ?? ""; const mode = parts[6] ?? "";
+  if (!/^[a-z0-9_-]{1,96}$/i.test(tenantId) || !/^0x[0-9a-f]{64}$/i.test(twinId) || !["state", "dataset"].includes(mode)) return undefined;
+  return { ...mapping, tenantId, twinId: twinId.toLowerCase(), mode: mode as "state" | "dataset" };
 }

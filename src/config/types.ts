@@ -44,6 +44,13 @@ export interface AppConfig {
       provisioningKeyCredential: string;
       dynamicTenantFile: string;
       periodDays: number;
+      publicApiUrl?: string;
+      mqtt?: {
+        passwordFile: string;
+        aclFile: string;
+        serviceUsername: string;
+        publicUrl: string;
+      };
     };
   };
   cache: { type: "memory" | "redis"; ttlMs: number; redisUrl?: string };

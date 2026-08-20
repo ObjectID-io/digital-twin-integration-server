@@ -54,5 +54,12 @@ describe("tenant accounting registry", () => {
     await dynamic.saveDynamic(accounting, "generated-tenant-key");
     await expect(dynamic.authenticateApiKey("generated-tenant-key")).resolves.toEqual(accounting);
     await expect(dynamic.isDynamic(accounting.ownerDid)).resolves.toBe(true);
+    const rotated = await dynamic.rotateExternalCredentials(accounting.ownerDid, "external-key", "mqtt-free-a", "mqtt-secret", [objectId("9")]);
+    expect(rotated).toMatchObject({ active: true, version: 1, mqttUsername: "mqtt-free-a", twinIds: [objectId("9")] });
+    await expect(dynamic.authenticateApiKey("external-key")).resolves.toEqual(accounting);
+    const revoked = await dynamic.revokeExternalCredentials(accounting.ownerDid);
+    expect(revoked).toMatchObject({ active: false, version: 1 });
+    await expect(dynamic.authenticateApiKey("external-key")).rejects.toMatchObject({ code: "AUTH_INVALID_API_KEY" });
+    await expect(dynamic.authenticateApiKey("generated-tenant-key")).resolves.toEqual(accounting);
   });
 });

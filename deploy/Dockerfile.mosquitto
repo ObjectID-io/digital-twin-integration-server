@@ -1,0 +1,6 @@
+FROM eclipse-mosquitto:2.0
+COPY deploy/mosquitto-watch.sh /usr/local/bin/mosquitto-watch.sh
+USER root
+RUN chmod 0755 /usr/local/bin/mosquitto-watch.sh
+USER 1883
+ENTRYPOINT ["/usr/local/bin/mosquitto-watch.sh"]
