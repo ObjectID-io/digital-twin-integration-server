@@ -303,6 +303,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   });
   api.get("/twins/:id", async (request, response, next) => { try { response.json(await twins.getTwin(request.params.id!)); } catch (error) { next(error); } });
   api.post("/twins", async (request, response, next) => { try { response.status(201).json(await twins.createProfiledTwin(request.body, request.auth?.accounting)); } catch (error) { next(error); } });
+  api.patch("/twins/:id", mutation(TwinAction.ModifyMetadata, (id, body, accounting) => twins.updateTwin(id, body, accounting), 200));
   api.delete("/twins/:id", async (request, response, next) => {
     try {
       const twinId = String(request.params.id).toLowerCase();
@@ -392,12 +393,12 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     response.status(mapped.status).json(mapped.body);
   });
 
-  function mutation(action: TwinAction, execute: (id: string, body: any, accounting?: AccountingContext) => Promise<unknown>) {
+  function mutation(action: TwinAction, execute: (id: string, body: any, accounting?: AccountingContext) => Promise<unknown>, status = 202) {
     return async (request: express.Request, response: express.Response, next: express.NextFunction) => {
       try {
         const twinId = String(request.params.id);
         await authorize(request, twinId, action);
-        response.status(202).json(await execute(twinId, request.body, request.auth?.accounting));
+        response.status(status).json(await execute(twinId, request.body, request.auth?.accounting));
       }
       catch (error) { next(error); }
     };

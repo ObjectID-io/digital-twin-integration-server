@@ -14,7 +14,10 @@ export const openApiDocument = {
   paths: {
     "/health": { get: { summary: "Liveness", responses: { "200": { description: "Alive" } } } },
     "/ready": { get: { summary: "ObjectID and required dependency readiness", responses: { "200": { description: "Ready" }, "503": { description: "Not ready" } } } },
-    "/api/v1/twins/{id}": { get: { summary: "Get Twin", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Twin" } } } },
+    "/api/v1/twins/{id}": {
+      get: { summary: "Get Twin", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Twin" } } },
+      patch: { summary: "Update Twin name, description and mutable metadata (owner/steward policy enforced)", responses: { "200": { description: "Updated on-chain" }, "403": { description: "Twin policy denied" } } },
+    },
     "/api/v1/capabilities": { get: { summary: "Discover Integration Server capabilities", responses: { "200": { description: "Capabilities" } } } },
     "/api/v1/subscription": { get: { summary: "Get the authenticated tenant's on-chain subscription plan, period and usage", responses: { "200": { description: "Tenant subscription accounting" }, "403": { description: "Tenant/subscription mismatch" }, "503": { description: "Subscription unavailable" } } } },
     "/api/v1/storage/retention/status": { get: { summary: "Inspect automatic managed-storage retention status", responses: { "200": { description: "Retention policy and last pruning run" } } } },

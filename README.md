@@ -88,6 +88,10 @@ published subscription ABI directly and is sponsored by the configured
 ObjectID Gas Stations. The shared `SubscriptionAccount` remains the
 authoritative source for plan, Twin limit and monthly operation usage.
 
+`PATCH /api/v1/twins/:id` updates the Twin name, description and mutable
+metadata through `update_twin_metadata`. Tenant ownership and the on-chain
+owner/steward policy are enforced before the sponsored transaction is submitted.
+
 ## Digital Thread
 
 `GET /api/v1/twins/:id/thread` returns `OIDTwinEvent[]`.
