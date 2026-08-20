@@ -6,11 +6,25 @@ The default topic is `objectid/twins/telemetry/dataset`. Samples are emitted eve
 
 ## Configuration
 
+### Dedicated tenant credentials (recommended)
+
+Download the JSON file from **Webview → Integration → Integration credentials**, then start the simulator with the tenant overlay:
+
+```bash
+export SIM_INTEGRATION_CONFIG_FILE=/absolute/path/objectid-dtis-free-customer.json
+docker compose -f docker-compose.yml -f compose.simulator-tenant.yml \
+  --profile simulator up -d --build mqtt-digital-twin-simulator
+```
+
+The simulator reads the MQTT endpoint, one-time password, tenant username, Twin ID and the exact state/dataset/command topics from that file. When the file contains more than one Twin, set `SIM_TWIN_ID` to select one. Environment variables still take precedence when explicitly provided. Never commit the downloaded file: it contains live credentials.
+
 | Variable | Default | Description |
 | --- | --- | --- |
 | `MQTT_URL` | `mqtt://mosquitto:1883` | Broker URL inside the Compose network. |
 | `MQTT_USERNAME` | `objectid` | Broker username. |
 | `MQTT_PASSWORD_FILE` | `/run/secrets/mqtt_password` | Docker secret containing the password. |
+| `OBJECTID_INTEGRATION_CONFIG_FILE` | unset | Downloaded DTIS integration configuration JSON. |
+| `SIM_TWIN_ID` | first Twin in configuration | Selects a Twin when the downloaded configuration contains several. |
 | `MQTT_TOPIC` | `objectid/twins/telemetry/dataset` | Destination topic. |
 | `SIM_INTERVAL_MS` | `5000` | Sample interval, minimum 1000 ms. |
 | `SIM_ASSET_ID` | `unknown` | Object ID included in each sample. |

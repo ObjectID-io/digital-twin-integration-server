@@ -164,7 +164,12 @@ export class TenantRegistry {
       lines.push(`user ${tenant.mqttUsername}`);
       for (const twinId of tenant.mqttTwinIds ?? []) {
         const root = `objectid/tenants/${tenant.tenantId}/twins/${twinId}`;
-        lines.push(`topic write ${root}/telemetry/state`, `topic write ${root}/telemetry/dataset`, `topic read ${root}/commands/#`, `topic write ${root}/commands/+/result`);
+        lines.push(
+          `topic write ${root}/telemetry/state`,
+          `topic write ${root}/telemetry/dataset`,
+          `topic read objectid/twins/${twinId}/commands/request`,
+          `topic write objectid/twins/${twinId}/commands/+/result`,
+        );
       }
       lines.push("");
     }

@@ -1,0 +1,16 @@
+services:
+  mqtt-digital-twin-simulator:
+    environment:
+      OBJECTID_INTEGRATION_CONFIG_FILE: /run/secrets/objectid_integration.json
+      MQTT_URL:
+      MQTT_USERNAME:
+      MQTT_PASSWORD_FILE:
+      MQTT_TOPIC:
+      SIM_STATE_TOPIC:
+      SIM_ASSET_ID:
+      SIM_TWIN_ID: ${SIM_TWIN_ID:-}
+    volumes:
+      - type: bind
+        source: ${SIM_INTEGRATION_CONFIG_FILE:?set SIM_INTEGRATION_CONFIG_FILE to the downloaded ObjectID DTIS configuration JSON}
+        target: /run/secrets/objectid_integration.json
+        read_only: true

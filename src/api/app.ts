@@ -501,8 +501,8 @@ function credentialStatusResponse(status: TenantCredentialStatus, free: NonNulla
         twinId,
         state: `objectid/tenants/${status.tenantId}/twins/${twinId}/telemetry/state`,
         dataset: `objectid/tenants/${status.tenantId}/twins/${twinId}/telemetry/dataset`,
-        commandRequests: `objectid/tenants/${status.tenantId}/twins/${twinId}/commands/request`,
-        commandResults: `objectid/tenants/${status.tenantId}/twins/${twinId}/commands/+/result`,
+        commandRequests: `objectid/twins/${twinId}/commands/request`,
+        commandResults: `objectid/twins/${twinId}/commands/+/result`,
       })),
     },
   };

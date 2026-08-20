@@ -3,23 +3,9 @@ import mqtt from "mqtt";
 import { createTelemetry } from "./telemetry.js";
 import { createControlServer } from "./control-server.js";
 import { executeSimulatorCommand, verifySimulatorCommand } from "./commands.js";
+import { loadSimulatorConfig } from "./config.js";
 
-const config = {
-  mqttUrl: process.env.MQTT_URL ?? "mqtt://mosquitto:1883",
-  username: process.env.MQTT_USERNAME ?? "objectid",
-  passwordFile: process.env.MQTT_PASSWORD_FILE ?? "/run/secrets/mqtt_password",
-  topic: process.env.MQTT_TOPIC ?? "objectid/twins/telemetry/dataset",
-  stateTopic: process.env.SIM_STATE_TOPIC ?? "objectid/twins/telemetry/state",
-  qos: integer("MQTT_QOS", 1, 0, 2),
-  intervalMs: integer("SIM_INTERVAL_MS", 5000, 1000, 86_400_000),
-  assetId: process.env.SIM_ASSET_ID ?? "unknown",
-  machineName: process.env.SIM_MACHINE_NAME ?? "mqtt-digital-twin",
-  commandInterfaceId: process.env.SIM_COMMAND_INTERFACE_ID ?? "urn:objectid:interface:simulator-control:v1",
-  commandSigningKeyFile: process.env.SIM_COMMAND_SIGNING_KEY_FILE ?? "/run/secrets/command_signing_key",
-  commandSigningKeyId: process.env.SIM_COMMAND_SIGNING_KEY_ID ?? "dtis-command-v1",
-  healthPort: integer("HEALTH_PORT", 8081, 1, 65535)
-};
-config.commandTopic = process.env.SIM_COMMAND_TOPIC ?? `objectid/twins/${config.assetId}/commands/request`;
+const config = await loadSimulatorConfig();
 
 const status = {
   connected: false,
@@ -28,13 +14,11 @@ const status = {
   lastError: null
 };
 
-const password = (await readFile(config.passwordFile, "utf8")).trimEnd();
-if (!password) throw new Error("MQTT password file is empty");
 const commandSigningKey = Buffer.from((await readFile(config.commandSigningKeyFile, "utf8")).trim(), "base64");
 if (commandSigningKey.length < 32) throw new Error("Simulator command signing key must contain at least 32 random bytes encoded as base64");
 const client = mqtt.connect(config.mqttUrl, {
   username: config.username,
-  password,
+  password: config.password,
   clientId: `oid-simulator-${config.machineName.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
   clean: true,
   connectTimeout: 10_000,
@@ -50,7 +34,7 @@ const processedCommands = new Map();
 client.on("connect", () => {
   status.connected = true;
   status.lastError = null;
-  log("mqtt_connected", { url: config.mqttUrl, topic: config.topic });
+  log("mqtt_connected", { url: config.mqttUrl, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, credentialSource: config.credentialSource });
   void publishSample();
   timer ??= setInterval(() => void publishSample(), config.intervalMs);
   void client.subscribeAsync(config.commandTopic, { qos: 1 });
@@ -157,14 +141,6 @@ async function shutdown(signal) {
 
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 process.once("SIGINT", () => void shutdown("SIGINT"));
-
-function integer(name, fallback, minimum, maximum) {
-  const value = Number(process.env[name] ?? fallback);
-  if (!Number.isInteger(value) || value < minimum || value > maximum) {
-    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
-  }
-  return value;
-}
 
 function log(event, fields = {}) {
   console.log(JSON.stringify({ timestamp: new Date().toISOString(), event, ...fields }));
