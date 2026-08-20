@@ -33,8 +33,8 @@ import type { StorageRouter } from "../storage/storage-router.js";
 import { ObjectIdTwinIndexer } from "../indexer/objectid.js";
 import type { PaginationOptions } from "../indexer/types.js";
 import { validateCompositionInput, validateIdentifierMappingInput, validateInterfaceInput } from "../twin/standardsValidation.js";
-import { TwinRealtimeHub } from "../realtime/hub.js";
-import { isPublicObjectIdTwin } from "../twin/publicVisibility.js";
+import { TwinRealtimeHub, type TwinRealtimeEvent } from "../realtime/hub.js";
+import { objectIdTwinPublicAccess } from "../twin/publicVisibility.js";
 import { CommandService } from "../commands/service.js";
 import { StorageRetentionService } from "../storage/retention.js";
 import {
@@ -111,6 +111,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const commands = new CommandService(config.commands, connectors.get("mqtt"));
   const retention = new StorageRetentionService(config.retention, storage, objectid);
   const renewalChecks = new Map<string, number>();
+  const publicAccessCache = new Map<string, { checkedAt: number; twinPublic: boolean; dataPublic: boolean }>();
 
   app.get("/health", (_request, response) => response.json({ status: "ok", stateless: true, timestamp: new Date().toISOString() }));
   app.get("/ready", async (_request, response, next) => {
@@ -138,10 +139,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
 
   app.get("/api/v1/public/twins/:id/realtime/status", async (request, response, next) => {
     try {
-      const twinId = String(request.params.id ?? "").toLowerCase();
-      if (!/^0x[0-9a-f]{64}$/i.test(twinId)) throw publicTwinNotFound();
-      const twin = await objectid.getTwin(twinId);
-      if (!isPublicObjectIdTwin(twin, config.objectid.packageId)) throw publicTwinNotFound();
+      const twinId = await assertPublicTwinAccess(request.params.id, false);
 
       const latest = realtime.latest(twinId);
       const health = await connectors.health();
@@ -155,6 +153,43 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
         hasData: Boolean(latest),
         lastSeenAt: latest ? new Date(latest.receivedAt).toISOString() : null,
       });
+    } catch (error) { next(error); }
+  });
+
+  app.get("/api/v1/public/twins/:id/realtime/latest", async (request, response, next) => {
+    try {
+      const twinId = await assertPublicTwinAccess(request.params.id, true);
+      const latest = realtime.latest(twinId);
+      if (!latest) throw new AppError("REALTIME_DATA_UNAVAILABLE", "No public realtime data is available for this Twin", 404, "CONNECTOR");
+      response.set("Cache-Control", "no-store").json(publicRealtimeEvent(latest));
+    } catch (error) { next(error); }
+  });
+
+  app.get("/api/v1/public/twins/:id/realtime/stream", async (request, response, next) => {
+    try {
+      const twinId = await assertPublicTwinAccess(request.params.id, true);
+      response.set({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      response.flushHeaders();
+      let open = true;
+      const send = (event: string, data: unknown) => response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      const latest = realtime.latest(twinId);
+      if (latest) send("snapshot", publicRealtimeEvent(latest));
+      const ensureAccess = async () => {
+        try { await assertPublicTwinAccess(twinId, true); return true; }
+        catch { if (open) response.end(); return false; }
+      };
+      const unsubscribe = realtime.subscribe(twinId, (event) => {
+        void ensureAccess().then((allowed) => { if (allowed && open) send("telemetry", publicRealtimeEvent(event)); });
+      });
+      const heartbeat = setInterval(() => {
+        void ensureAccess().then((allowed) => { if (allowed && open) response.write(": heartbeat\n\n"); });
+      }, 10_000);
+      request.on("close", () => { open = false; clearInterval(heartbeat); unsubscribe(); });
     } catch (error) { next(error); }
   });
 
@@ -454,6 +489,20 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     return new AppError("PUBLIC_TWIN_NOT_FOUND", "Public Twin not found", 404, "VALIDATION");
   }
 
+  async function assertPublicTwinAccess(rawTwinId: unknown, operationalData: boolean) {
+    const twinId = String(rawTwinId ?? "").toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/i.test(twinId)) throw publicTwinNotFound();
+    const cached = publicAccessCache.get(twinId);
+    let access = cached;
+    if (!access || Date.now() - access.checkedAt >= 5_000) {
+      const twin = await objectid.getTwin(twinId);
+      access = { checkedAt: Date.now(), ...objectIdTwinPublicAccess(twin, config.objectid.packageId) };
+      publicAccessCache.set(twinId, access);
+    }
+    if (!access.twinPublic || (operationalData && !access.dataPublic)) throw publicTwinNotFound();
+    return twinId;
+  }
+
   async function ingestMqttMessage(message: MappedMqttMessage) {
     const accounting = await connectorAccounting(String(message.mapping.tenantId ?? ""));
     if (accounting) await assertAccountingTwin(accounting, message.mapping.twinId);
@@ -559,6 +608,16 @@ function callerDid(request: express.Request, config: AppConfig) {
   const claims = request.auth?.claims;
   const delegated = request.header("x-objectid-caller-did");
   return String(claims?.did ?? (config.security.authMode !== "disabled" ? delegated : undefined) ?? claims?.sub ?? config.security.serviceDid ?? request.auth?.subject ?? "");
+}
+
+function publicRealtimeEvent(event: TwinRealtimeEvent) {
+  return {
+    twinId: event.twinId,
+    observedAt: event.observedAt,
+    receivedAt: event.receivedAt,
+    payload: event.payload,
+    encryption: event.encryption,
+  };
 }
 
 function isMaintenanceEvent(body: any) {

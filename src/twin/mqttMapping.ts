@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { AppError } from "../common/errors.js";
 import type { MqttMapping } from "../connectors/mqtt.js";
 import type { OpcUaMapping } from "../connectors/opcua.js";
@@ -9,13 +10,15 @@ export function mqttMessageToState(message: MappedMqttMessage) {
   if (!message.mapping.twinId || !message.mapping.aspect || !message.mapping.sampleType) {
     throw new AppError("MQTT_MAPPING_INVALID", "MQTT mapping requires twinId, aspect and sampleType", 422, "CONNECTOR");
   }
+  const serializedPayload = JSON.stringify(message.value);
   return {
     twinId: message.mapping.twinId,
     state: {
       aspectCode: message.mapping.aspect,
       sampleType: message.mapping.sampleType,
-      sourceUri: sourceUri(message),
-      payloadInline: JSON.stringify(message.value),
+      sourceUri: publicConnectorUri(message),
+      payloadHash: createHash("sha256").update(serializedPayload).digest("hex"),
+      payloadInline: "",
       observedAt: message.observedAt,
     },
   };
@@ -44,4 +47,8 @@ export function mqttMessageToDataset(message: MappedMqttMessage) {
 
 function sourceUri(message: MappedMqttMessage) {
   return message.nodeId ? `opcua://${message.nodeId}` : `mqtt://${message.topic ?? "unknown"}`;
+}
+
+function publicConnectorUri(message: MappedMqttMessage) {
+  return message.nodeId ? "objectid-connector://opcua" : "objectid-connector://mqtt";
 }

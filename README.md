@@ -142,6 +142,10 @@ Authenticated clients can discover realtime support with `GET /api/v1/capabiliti
 
 Public Webviews can inspect `GET /api/v1/public/twins/:id/realtime/status` without credentials. The endpoint first verifies that the requested object belongs to the configured ObjectID package and is marked `public` in its on-chain mutable metadata. It returns only `available`, `connected`, `hasData` and `lastSeenAt`; private or invalid Twins receive the same `404` response and no telemetry, source, tenant or connector details are disclosed.
 
+Operational payloads remain private by default. When the owner or steward also sets `objectid.dataVisibility` to `public`, anonymous clients may read `/api/v1/public/twins/:id/realtime/latest` and `/stream`. These responses omit connector addresses and tenant details. Setting either Twin visibility or data visibility back to `private` revokes new access and closes active public streams after the policy refresh interval.
+
+Connector state publications never place the MQTT/OPC-UA payload or tenant topic in the on-chain `OIDTwinState`. The chain record contains a SHA-256 hash and a sanitized connector URI; the complete value remains in DTIS realtime memory and configured off-chain dataset storage. This applies to newly ingested states; payloads embedded by earlier software versions remain part of immutable chain history.
+
 The user interface is a separate project: `sdellava/digital-twin-webview`. This repository contains only the integration service, industrial connectors, simulator and supporting infrastructure.
 
 ## Idempotency

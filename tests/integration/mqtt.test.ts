@@ -11,6 +11,10 @@ describe("incoming MQTT integration", () => {
     });
     await objectid.publishState(mapped.twinId, mapped.state);
     expect(objectid.calls[0]).toMatchObject({ method: "publishState", twinId: "0xtwin" });
-    expect((objectid.calls[0]!.input as any).payloadInline).toBe('{"celsius":42}');
+    expect(objectid.calls[0]!.input).toMatchObject({
+      sourceUri: "objectid-connector://mqtt",
+      payloadInline: "",
+      payloadHash: "609251dd2304f4c177c1ec37acecdd9542673a1318afffa3b19ecdd73641d5b1",
+    });
   });
 });

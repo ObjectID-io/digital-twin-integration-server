@@ -8,7 +8,12 @@ describe("connector mappings", () => {
   it("supports MQTT wildcards", () => { expect(mqttMatch("factory/+/temperature", "factory/m1/temperature")).toBe(true); expect(mqttMatch("factory/#", "factory/line/m1/temp")).toBe(true); });
   it("maps MQTT data to OIDTwinState input", () => {
     const result = mqttMessageToState({ mapping: { topic: "factory/#", twinId: "0xtwin", aspect: "telemetry", sampleType: "observed" }, topic: "factory/m1/temp", value: 42, observedAt: 100 });
-    expect(result.twinId).toBe("0xtwin"); expect(result.state.payloadInline).toBe("42");
+    expect(result.twinId).toBe("0xtwin");
+    expect(result.state).toMatchObject({
+      sourceUri: "objectid-connector://mqtt",
+      payloadInline: "",
+      payloadHash: "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049",
+    });
   });
   it("extracts and validates tenant-scoped MQTT topics", () => {
     const twinId = `0x${"a".repeat(64)}`;
