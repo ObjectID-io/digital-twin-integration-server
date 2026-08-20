@@ -140,6 +140,8 @@ is retained in the ephemeral `failedJobs` collection.
 
 Authenticated clients can discover realtime support with `GET /api/v1/capabilities`, inspect `GET /api/v1/twins/:id/realtime/status`, read the latest connector payload and subscribe through SSE. MQTT and OPC-UA payloads are transported unchanged. If a device publishes an encrypted envelope, this server never receives or stores its decryption password and never decrypts the payload.
 
+Public Webviews can inspect `GET /api/v1/public/twins/:id/realtime/status` without credentials. The endpoint first verifies that the requested object belongs to the configured ObjectID package and is marked `public` in its on-chain mutable metadata. It returns only `available`, `connected`, `hasData` and `lastSeenAt`; private or invalid Twins receive the same `404` response and no telemetry, source, tenant or connector details are disclosed.
+
 The user interface is a separate project: `sdellava/digital-twin-webview`. This repository contains only the integration service, industrial connectors, simulator and supporting infrastructure.
 
 ## Idempotency

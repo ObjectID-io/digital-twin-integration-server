@@ -34,6 +34,7 @@ import { ObjectIdTwinIndexer } from "../indexer/objectid.js";
 import type { PaginationOptions } from "../indexer/types.js";
 import { validateCompositionInput, validateIdentifierMappingInput, validateInterfaceInput } from "../twin/standardsValidation.js";
 import { TwinRealtimeHub } from "../realtime/hub.js";
+import { isPublicObjectIdTwin } from "../twin/publicVisibility.js";
 import { CommandService } from "../commands/service.js";
 import { StorageRetentionService } from "../storage/retention.js";
 import {
@@ -134,6 +135,28 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   });
   app.get("/openapi.json", (_request, response) => response.json(openApiDocument));
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
+
+  app.get("/api/v1/public/twins/:id/realtime/status", async (request, response, next) => {
+    try {
+      const twinId = String(request.params.id ?? "").toLowerCase();
+      if (!/^0x[0-9a-f]{64}$/i.test(twinId)) throw publicTwinNotFound();
+      const twin = await objectid.getTwin(twinId);
+      if (!isPublicObjectIdTwin(twin, config.objectid.packageId)) throw publicTwinNotFound();
+
+      const latest = realtime.latest(twinId);
+      const health = await connectors.health();
+      const sourceType = latest?.source.type;
+      const connected = sourceType
+        ? health[sourceType]?.healthy === true
+        : ["mqtt", "opcua"].some((type) => health[type]?.healthy === true);
+      response.set("Cache-Control", "no-store").json({
+        available: connected,
+        connected,
+        hasData: Boolean(latest),
+        lastSeenAt: latest ? new Date(latest.receivedAt).toISOString() : null,
+      });
+    } catch (error) { next(error); }
+  });
 
   app.post("/internal/testnet/free-subscriptions", async (request, response, next) => {
     try {
@@ -425,6 +448,10 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     if (subscriptionId.toLowerCase() !== accounting.subscriptionId.toLowerCase()) {
       throw new AppError("OBJECTID_TENANT_TWIN_MISMATCH", "The authenticated tenant cannot access this Twin", 403, "AUTHORIZATION", { tenantId: accounting.tenantId, twinId });
     }
+  }
+
+  function publicTwinNotFound() {
+    return new AppError("PUBLIC_TWIN_NOT_FOUND", "Public Twin not found", 404, "VALIDATION");
   }
 
   async function ingestMqttMessage(message: MappedMqttMessage) {

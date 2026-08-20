@@ -43,6 +43,53 @@ describe("HTTP integration", () => {
     expect(latest.body).toMatchObject({ twinId: "0xtwin", observedAt: 123, payload, encryption: { encrypted: false } });
   });
 
+  it("exposes only sanitized realtime status for an on-chain public Twin", async () => {
+    const twinId = `0x${"1".repeat(64)}`;
+    adapter.twins.set(twinId, {
+      data: {
+        type: "0xpackage::oid_twin::OIDTwin",
+        content: { fields: { mutable_metadata: JSON.stringify({ objectid: { visibility: "public" } }) } },
+      },
+    });
+    const runtime = createApp(testConfig(), adapter);
+    runtime.realtime.publish({
+      mapping: { topic: "factory/telemetry", twinId, aspect: "telemetry", sampleType: "observed" },
+      topic: "factory/telemetry", value: { secret: "must-not-leak" }, observedAt: 123,
+    });
+
+    const response = await request(runtime.app).get(`/api/v1/public/twins/${twinId}/realtime/status`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      available: false,
+      connected: false,
+      hasData: true,
+      lastSeenAt: expect.any(String),
+    });
+    expect(response.text).not.toContain("secret");
+    expect(response.text).not.toContain("factory/telemetry");
+  });
+
+  it("does not disclose realtime status for a private Twin", async () => {
+    const twinId = `0x${"2".repeat(64)}`;
+    adapter.twins.set(twinId, {
+      data: {
+        type: "0xpackage::oid_twin::OIDTwin",
+        content: { fields: { mutable_metadata: JSON.stringify({ objectid: { visibility: "private" } }) } },
+      },
+    });
+    const runtime = createApp(testConfig(), adapter);
+    runtime.realtime.publish({
+      mapping: { topic: "factory/private", twinId, aspect: "telemetry", sampleType: "observed" },
+      topic: "factory/private", value: { secret: true }, observedAt: 123,
+    });
+
+    const response = await request(runtime.app).get(`/api/v1/public/twins/${twinId}/realtime/status`);
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe("PUBLIC_TWIN_NOT_FOUND");
+  });
+
   it("passes encrypted realtime envelopes through unchanged", async () => {
     const runtime = createApp(testConfig(), adapter);
     const envelope = { version: 1, encrypted: true, algorithm: "AES-256-GCM", keyId: "line-a", salt: "c2FsdHNhbHRzYWx0c2FsdA==", nonce: "bm9uY2Vub25jZQ==", ciphertext: "Y2lwaGVydGV4dA==", authTag: "dGFn" };
