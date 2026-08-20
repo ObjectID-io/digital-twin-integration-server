@@ -17,7 +17,7 @@ services:
           mosquitto_passwd -b -c /mosquitto/config/password_file "$$MQTT_USERNAME" "$$(cat /run/secrets/mqtt_password)"
         fi
         if [ ! -s /mosquitto/config/acl_file ]; then
-          printf 'user %s\ntopic readwrite #\n' "$$MQTT_USERNAME" > /mosquitto/config/acl_file
+          printf 'user %s\ntopic readwrite #\ntopic read $$SYS/#\n' "$$MQTT_USERNAME" > /mosquitto/config/acl_file
         fi
         chown -R 1883:1883 /mosquitto/config /mosquitto/data
         chmod 0660 /mosquitto/config/password_file /mosquitto/config/acl_file

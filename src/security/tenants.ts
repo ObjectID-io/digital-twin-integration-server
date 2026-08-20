@@ -159,7 +159,7 @@ export class TenantRegistry {
   private async rewriteMqttAcl(tenants: TenantDefinition[]) {
     const mqtt = this.config.testnetFreeSubscriptions?.mqtt;
     if (!mqtt?.aclFile) return;
-    const lines = [`user ${mqtt.serviceUsername}`, "topic readwrite #", ""];
+    const lines = [`user ${mqtt.serviceUsername}`, "topic readwrite #", "topic read $SYS/#", ""];
     for (const tenant of tenants.filter((value) => value.mqttUsername && value.externalApiKeyHash && !value.credentialsRevokedAt)) {
       lines.push(`user ${tenant.mqttUsername}`);
       for (const twinId of tenant.mqttTwinIds ?? []) {
