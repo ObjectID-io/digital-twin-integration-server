@@ -92,6 +92,11 @@ export class IotaStatePublisher {
     return { id: created.objectId, digest: result.digest, transaction: result };
   }
 
+  async deleteTwin(twinId: string, accounting?: AccountingContext) {
+    const result = await this.twinCall("delete_twin", twinId, () => [], accounting);
+    return { id: requiredObjectId(twinId, "twinId"), deleted: true, digest: result.digest, transaction: result };
+  }
+
   async provisionFreeTestnetSubscription(ownerDid: string, customerId: string, periodDays: number) {
     if (this.config.network !== "testnet") throw new AppError("OBJECTID_FREE_SUBSCRIPTION_TESTNET_ONLY", "Free subscriptions are available only on testnet", 403, "AUTHORIZATION");
     const signer = this.requiredSignerConfig();

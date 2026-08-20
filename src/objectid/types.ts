@@ -86,6 +86,7 @@ export interface ObjectIdAdapter {
   getTwin(id: string): Promise<unknown>;
   findTwinsByDid(did: string): Promise<DidTwinSummary[]>;
   createTwin(input: unknown, accounting?: AccountingContext): Promise<unknown>;
+  deleteTwin?(id: string, accounting?: AccountingContext): Promise<unknown>;
   updateTwin(id: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
   publishState(twinId: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
   addDataset(twinId: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;

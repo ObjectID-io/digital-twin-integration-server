@@ -102,6 +102,9 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
   createTwin(input: unknown, accounting?: AccountingContext) {
     return this.statePublisher ? this.statePublisher.createTwin(asRecord(input), accounting) : this.mutate("createTwin", input);
   }
+  deleteTwin(id: string, accounting?: AccountingContext) {
+    return this.statePublisher ? this.statePublisher.deleteTwin(id, accounting) : this.mutate("deleteTwin", { twinId: id });
+  }
   updateTwin(id: string, input: unknown, accounting?: AccountingContext) {
     return this.statePublisher ? this.statePublisher.updateTwin(id, asRecord(input), accounting) : this.mutate("updateTwin", { twinId: id, ...asRecord(input) });
   }
