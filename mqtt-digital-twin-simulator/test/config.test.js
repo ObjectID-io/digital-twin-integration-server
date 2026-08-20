@@ -47,3 +47,13 @@ test("keeps uploaded credentials authoritative while allowing simulator settings
 test("rejects a malformed downloaded credentials file", async () => {
   await assert.rejects(() => loadSimulatorConfig({ OBJECTID_INTEGRATION_CONFIG_FILE: "/bad.json" }, async () => "{}"), /objectid and mqtt sections/);
 });
+
+test("starts in fallback mode before the first web upload", async () => {
+  const missing = Object.assign(new Error("missing"), { code: "ENOENT" });
+  const config = await loadSimulatorConfig(
+    { OBJECTID_INTEGRATION_CONFIG_FILE: "/data/integration.json", SIM_ASSET_ID: "unknown" },
+    async (path) => { if (path === "/data/integration.json") throw missing; return "bootstrap-secret"; },
+  );
+  assert.equal(config.assetId, "unknown");
+  assert.equal(config.credentialSource, "environment");
+});

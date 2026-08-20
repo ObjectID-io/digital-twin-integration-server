@@ -34,7 +34,7 @@ export async function loadSimulatorConfig(env = process.env, read = readFile) {
     credentialSource: integration ? "integration-file" : "environment",
   };
   config.commandTopic = pick(env.SIM_COMMAND_TOPIC_OVERRIDE, topicSet?.commandRequests, env.SIM_COMMAND_TOPIC, `objectid/twins/${config.assetId}/commands/request`);
-  validate(config, integrationFile);
+  validate(config, Boolean(integration));
   return config;
 }
 
@@ -60,11 +60,11 @@ export function validateIntegrationConfig(value) {
   return parsed;
 }
 
-function validate(config, integrationFile) {
+function validate(config, hasIntegration) {
   if (!/^(mqtt|mqtts|ws|wss):\/\//i.test(config.mqttUrl)) throw new Error("MQTT_URL must use mqtt, mqtts, ws or wss");
-  if (!config.username || !config.password) throw new Error(`MQTT credentials are missing${integrationFile ? " from the integration configuration" : ""}`);
+  if (!config.username || !config.password) throw new Error(`MQTT credentials are missing${hasIntegration ? " from the integration configuration" : ""}`);
   if (!validTwinId(config.assetId) && config.assetId !== "unknown") throw new Error("SIM_ASSET_ID must be a valid ObjectID Twin ID");
-  if (integrationFile && !validTwinId(config.assetId)) throw new Error("The integration configuration does not contain a usable Twin ID");
+  if (hasIntegration && !validTwinId(config.assetId)) throw new Error("The integration configuration does not contain a usable Twin ID");
 }
 
 function validTwinId(value) { return /^0x[0-9a-f]{64}$/i.test(String(value)); }
