@@ -97,7 +97,7 @@ export class IotaStatePublisher {
     return { id: requiredObjectId(twinId, "twinId"), deleted: true, digest: result.digest, transaction: result };
   }
 
-  async provisionFreeTestnetSubscription(ownerDid: string, customerId: string, periodDays: number) {
+  async provisionFreeTestnetSubscription(ownerDid: string, customerId: string, periodDays: number, plan = 1) {
     if (this.config.network !== "testnet") throw new AppError("OBJECTID_FREE_SUBSCRIPTION_TESTNET_ONLY", "Free subscriptions are available only on testnet", 403, "AUTHORIZATION");
     const signer = this.requiredSignerConfig();
     if (!signer.subscriptionAdminCapCredential) throw new AppError("CREDENTIAL_MISSING", "SubscriptionAdminCap credential is not configured", 503, "AUTHORIZATION");
@@ -110,13 +110,14 @@ export class IotaStatePublisher {
     const integrationControllerId = objectIdField(fields.controller_of);
     const periodStart = Date.now();
     const periodEnd = periodStart + periodDays * 86_400_000;
+    const testPlan = testnetPlan(plan);
     const result = await this.execute("create_customer_subscription", (tx) => tx.moveCall({
       target: this.target("create_customer_subscription"),
       arguments: [
         tx.object(requiredObjectId(adminCapId, "subscriptionAdminCapId")), tx.pure.string(customerId),
         tx.pure.address(requiredObjectId(ownerControllerId, "ownerControllerId")),
-        tx.pure.address(integrationControllerId), tx.pure.u8(1), tx.pure.u64(periodStart), tx.pure.u64(periodEnd),
-        tx.pure.u64(0), tx.pure.u64(0), tx.object(signer.clockId),
+        tx.pure.address(integrationControllerId), tx.pure.u8(testPlan.code), tx.pure.u64(periodStart), tx.pure.u64(periodEnd),
+        tx.pure.u64(testPlan.twinLimit), tx.pure.u64(testPlan.creditLimit), tx.object(signer.clockId),
       ],
     }));
     const created = result.objectChanges?.find((change: any) => change.type === "created" && String(change.objectType ?? "").endsWith("::oid_twin::SubscriptionAccount")) as any;
@@ -124,15 +125,16 @@ export class IotaStatePublisher {
     return { subscriptionId: created.objectId, digest: String(result.digest) };
   }
 
-  async renewFreeTestnetSubscription(subscriptionId: string, periodDays: number) {
+  async renewFreeTestnetSubscription(subscriptionId: string, periodDays: number, plan = 1) {
     if (this.config.network !== "testnet") throw new AppError("OBJECTID_FREE_SUBSCRIPTION_TESTNET_ONLY", "Free subscriptions are available only on testnet", 403, "AUTHORIZATION");
     const signer = this.requiredSignerConfig();
     if (!signer.subscriptionAdminCapCredential) throw new AppError("CREDENTIAL_MISSING", "SubscriptionAdminCap credential is not configured", 503, "AUTHORIZATION");
     const adminCapId = await requiredCredential(this.credentials, signer.subscriptionAdminCapCredential);
     const periodStart = Date.now(); const periodEnd = periodStart + periodDays * 86_400_000;
+    const testPlan = testnetPlan(plan);
     const result = await this.execute("renew_subscription", (tx) => tx.moveCall({ target: this.target("renew_subscription"), arguments: [
       tx.object(requiredObjectId(adminCapId, "subscriptionAdminCapId")), tx.object(requiredObjectId(subscriptionId, "subscriptionId")),
-      tx.pure.u8(1), tx.pure.u64(periodStart), tx.pure.u64(periodEnd), tx.pure.u64(0), tx.pure.u64(0), tx.object(signer.clockId),
+      tx.pure.u8(testPlan.code), tx.pure.u64(periodStart), tx.pure.u64(periodEnd), tx.pure.u64(testPlan.twinLimit), tx.pure.u64(testPlan.creditLimit), tx.object(signer.clockId),
     ] }));
     return { digest: String(result.digest) };
   }
@@ -451,6 +453,13 @@ function objectIdField(input: unknown): string {
 function subtractFloor(limit: string, used: string) {
   const remaining = BigInt(limit) - BigInt(used);
   return (remaining > 0n ? remaining : 0n).toString();
+}
+
+function testnetPlan(input: number) {
+  if (!Number.isInteger(input) || input < 1 || input > 4) throw new AppError("OBJECTID_SUBSCRIPTION_PLAN_INVALID", "Testnet plan must be base, advanced, pro or enterprise", 422, "VALIDATION");
+  return input === 4
+    ? { code: input, twinLimit: 500, creditLimit: 1_000_000 }
+    : { code: input, twinLimit: 0, creditLimit: 0 };
 }
 
 function planName(code: number): SubscriptionStatus["plan"]["name"] {

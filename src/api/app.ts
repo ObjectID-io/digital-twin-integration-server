@@ -196,22 +196,23 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   app.post("/internal/testnet/free-subscriptions", async (request, response, next) => {
     try {
       const { free, ownerDid } = await assertProvisioningRequest(request, request.body?.ownerDid);
+      const requestedPlan = testnetPlanCode(request.body?.plan);
       const tenantId = `free-${ownerDid.slice(-16)}`;
       const customerId = tenantId;
       let accounting = await tenants.findByOwnerDid(ownerDid);
       let digest: string | undefined;
       if (!accounting) {
         if (!objectid.provisionFreeTestnetSubscription) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription provisioning is unavailable", 503, "OBJECTID");
-        const created = await objectid.provisionFreeTestnetSubscription(ownerDid, customerId, free.periodDays);
+        const created = await objectid.provisionFreeTestnetSubscription(ownerDid, customerId, free.periodDays, requestedPlan);
         digest = created.digest;
         accounting = { tenantId, customerId, ownerDid, subscriptionId: created.subscriptionId };
       } else if (await tenants.isDynamic(ownerDid) && objectid.getSubscription && objectid.renewFreeTestnetSubscription) {
         const status = await objectid.getSubscription(accounting);
-        if (!status.current && BigInt(status.periodEnd) <= BigInt(Date.now())) digest = (await objectid.renewFreeTestnetSubscription(accounting.subscriptionId, free.periodDays)).digest;
+        if (status.plan.code !== requestedPlan || !status.current) digest = (await objectid.renewFreeTestnetSubscription(accounting.subscriptionId, free.periodDays, requestedPlan)).digest;
       }
       const apiKey = randomBytes(32).toString("hex");
       await tenants.saveDynamic(accounting, apiKey);
-      response.status(digest ? 201 : 200).set("Cache-Control", "no-store").json({ ...accounting, apiKey, digest, plan: "base", free: true });
+      response.status(digest ? 201 : 200).set("Cache-Control", "no-store").json({ ...accounting, apiKey, digest, plan: testnetPlanName(requestedPlan), free: true });
     } catch (error) { next(error); }
   });
 
@@ -361,7 +362,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       if (accounting && free?.enabled && now - lastCheck >= 300_000 && await tenants.isDynamic(accounting.ownerDid) && objectid.getSubscription && objectid.renewFreeTestnetSubscription) {
         renewalChecks.set(accounting.tenantId, now);
         const status = await objectid.getSubscription(accounting);
-        if (!status.current && BigInt(status.periodEnd) <= BigInt(Date.now())) await objectid.renewFreeTestnetSubscription(accounting.subscriptionId, free.periodDays);
+        if (!status.current && BigInt(status.periodEnd) <= BigInt(Date.now())) await objectid.renewFreeTestnetSubscription(accounting.subscriptionId, free.periodDays, status.plan.code);
       }
       next();
     } catch (error) { next(error); }
@@ -685,6 +686,15 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
 }
 
 function optionalTwinId(value: unknown) { return typeof value === "string" && value ? value : undefined; }
+
+function testnetPlanCode(value: unknown) {
+  const normalized = String(value ?? "base").trim().toLowerCase();
+  const code = ({ base: 1, advanced: 2, pro: 3, enterprise: 4 } as const)[normalized as "base" | "advanced" | "pro" | "enterprise"];
+  if (!code) throw new AppError("OBJECTID_SUBSCRIPTION_PLAN_INVALID", "Plan must be base, advanced, pro or enterprise", 422, "VALIDATION");
+  return code;
+}
+
+function testnetPlanName(code: number) { return ({ 1: "base", 2: "advanced", 3: "pro", 4: "enterprise" } as const)[code as 1 | 2 | 3 | 4]; }
 
 function credentialStatusResponse(status: TenantCredentialStatus, provisioning: NonNullable<AppConfig["security"]["tenantProvisioning"] | AppConfig["security"]["testnetFreeSubscriptions"]>, network = "testnet") {
   const apiUrl = String(provisioning.publicApiUrl ?? "https://dtis.objectid.io/api/v1").replace(/\/$/, "");
