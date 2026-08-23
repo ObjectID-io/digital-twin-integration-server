@@ -20,7 +20,9 @@ docker compose -f docker-compose.yml -f compose.simulator-tenant.yml \
 
 The simulator reads the MQTT endpoint, one-time password, Twin-scoped username, bound Twin ID and the exact state/dataset/command topics from each file. A device credential can access only its assigned Twin and contains no tenant REST API key. Never commit a downloaded file: it contains live credentials. Older tenant configuration files remain accepted for migration.
 
-Open `https://dt-simulator.objectid.io`, select one or more per-Twin JSON files in **Add simulated Twins**, enter the simulator administration password and choose **Add Twin files**. The server validates every file, stores it separately under `/data/twins` with mode `0600`, and starts or replaces only that Twin runtime. Existing simulations continue without a restart. Use the Twin selector to inspect and control a simulation; **Remove** deletes only its local simulator configuration and never deletes the on-chain Digital Twin. The administration password is read from `/run/secrets/sim_control_password` and is never stored by the browser.
+Open `https://dt-simulator.objectid.io`, select one or more per-Twin JSON files in **Add simulated Twins** and choose **Add Twin files**. No additional password is required: possession of the one-time device file and successful authentication of its MQTT credential authorize that Twin's self-provisioning. Only files bound to the hosted `dtis.objectid.io` testnet or mainnet MQTT endpoint are accepted through this flow. The server verifies the credential before storing the file separately under `/data/twins` with mode `0600`, then starts or replaces only that Twin runtime. Existing simulations continue without a restart.
+
+Use the Twin selector to inspect and control a simulation. **Remove** deletes only its local simulator configuration and never deletes the on-chain Digital Twin; this management operation still requires the simulator administration password from `/run/secrets/sim_control_password`.
 
 On the VPS, read that administration password with:
 

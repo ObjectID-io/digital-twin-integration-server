@@ -1,7 +1,23 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
-import { applyCommand, createControlServer } from "../src/control-server.js";
+import { applyCommand, createControlServer, isHostedDeviceProvisioning } from "../src/control-server.js";
+
+const hostedTwinId = `0x${"a".repeat(64)}`;
+const hostedDeviceFile = {
+  specVersion: "objectid.device-provisioning.v1",
+  objectid: { network: "mainnet", tenantId: "tenant-a", subscriptionId: `0x${"b".repeat(64)}` },
+  twin: { id: hostedTwinId, name: "Machine A", type: "machine" },
+  mqtt: {
+    endpoint: "wss://dtis.objectid.io/mqtt-mainnet", clientId: "device-a", username: "device-a", password: "secret-a",
+    topics: {
+      state: `objectid/mainnet/tenants/tenant-a/twins/${hostedTwinId}/telemetry/state`,
+      dataset: `objectid/mainnet/tenants/tenant-a/twins/${hostedTwinId}/telemetry/dataset`,
+      commandRequests: `objectid/mainnet/twins/${hostedTwinId}/commands/request`,
+      commandResults: `objectid/mainnet/twins/${hostedTwinId}/commands/+/result`,
+    },
+  },
+};
 
 test("applies simulator control commands", () => {
   const control = { scenario: "normal", paused: false };
@@ -59,6 +75,28 @@ test("protects and installs an uploaded integration configuration", async (conte
   assert.equal(accepted.status, 201);
   assert.deepEqual(installed, { mqtt: { endpoint: "wss://dtis.objectid.io/mqtt" } });
   assert.equal((await accepted.json()).restarting, false);
+});
+
+test("self-provisions a hosted Twin device file without the simulator administrator password", async (context) => {
+  let installed;
+  let options;
+  const server = createControlServer({
+    status: { connected: true }, control: { scenario: "normal", paused: false }, port: 0,
+    publishNow: async () => undefined, adminPassword: "admin-secret",
+    installIntegrationConfig: async (value, installOptions) => { installed = value; options = installOptions; return { installed: 1, twins: [{ twinId: hostedTwinId }] }; },
+  });
+  context.after(() => server.close());
+  await once(server, "listening");
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/integration`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(hostedDeviceFile) });
+  assert.equal(response.status, 201);
+  assert.deepEqual(installed, hostedDeviceFile);
+  assert.deepEqual(options, { verifyCredential: true });
+});
+
+test("rejects self-provisioning files that do not bind a hosted endpoint and exact Twin topics", () => {
+  assert.equal(isHostedDeviceProvisioning(hostedDeviceFile), true);
+  assert.equal(isHostedDeviceProvisioning({ ...hostedDeviceFile, mqtt: { ...hostedDeviceFile.mqtt, endpoint: "wss://private.example/mqtt-mainnet" } }), false);
+  assert.equal(isHostedDeviceProvisioning({ ...hostedDeviceFile, mqtt: { ...hostedDeviceFile.mqtt, topics: { ...hostedDeviceFile.mqtt.topics, dataset: "objectid/mainnet/tenants/tenant-a/twins/0xdead/telemetry/dataset" } } }), false);
 });
 
 test("routes controls and removal to a selected Twin in a simulator fleet", async (context) => {

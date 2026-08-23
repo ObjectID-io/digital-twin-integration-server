@@ -65,23 +65,53 @@ async function activateIntegrationConfig(value) {
   return activated;
 }
 
-async function installIntegrationConfig(value) {
+async function installIntegrationConfig(value, { verifyCredential = false } = {}) {
   const validated = validateIntegrationConfig(value);
-  await mkdir(configDirectory, { recursive: true });
   const storedValues = [];
   for (const twinIdValue of validated.objectid.twinIds) {
     const twinId = String(twinIdValue).toLowerCase();
     const stored = scopedConfiguration(validated, twinId);
+    if (verifyCredential) await verifyMqttCredential(await loadSimulatorConfigFromValue(stored, process.env, readFile, twinId));
+    storedValues.push(stored);
+  }
+  const maximumTwins = Number(process.env.SIM_MAX_TWINS ?? 100);
+  const additional = storedValues.filter((stored) => !runtimes.has(stored.twin.id)).length;
+  if (!Number.isInteger(maximumTwins) || maximumTwins < 1 || runtimes.size + additional > maximumTwins) throw new Error("Simulator Twin capacity has been reached");
+  await mkdir(configDirectory, { recursive: true });
+  for (const stored of storedValues) {
+    const twinId = stored.twin.id;
     const target = join(configDirectory, `${twinId}.json`);
     const temporary = `${target}.${process.pid}.tmp`;
     await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
     await chmod(temporary, 0o600);
     await rename(temporary, target);
-    storedValues.push(stored);
   }
   const twins = [];
   for (const stored of storedValues) twins.push(...await activateIntegrationConfig(stored));
   return { installed: twins.length, twins };
+}
+
+async function verifyMqttCredential(config) {
+  const client = mqtt.connect(config.mqttUrl, {
+    username: config.username,
+    password: config.password,
+    clientId: config.clientId || `oid-simulator-verify-${config.assetId.slice(-12)}`,
+    clean: true,
+    connectTimeout: 8_000,
+    reconnectPeriod: 0,
+  });
+  let timeout;
+  try {
+    await new Promise((resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error("Twin MQTT credentials could not be verified")), 10_000);
+      client.once("connect", resolve);
+      client.once("error", (error) => reject(new Error(`Twin MQTT credential verification failed: ${error.message}`)));
+      client.once("close", () => { if (!client.connected) reject(new Error("Twin MQTT broker rejected the device credentials")); });
+    });
+  } finally {
+    clearTimeout(timeout);
+    await client.endAsync().catch(() => undefined);
+  }
 }
 
 async function removeIntegrationConfig(twinIdValue) {
