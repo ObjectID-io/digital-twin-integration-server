@@ -18,6 +18,11 @@ test("verifies and executes an authenticated operational command", () => {
   assert.deepEqual(executeSimulatorCommand(control, signedRequest({ command: { name: "setSimulationScenario", version: "1.0", parameters: { scenario: "overheat" } } })), { scenario: "overheat", paused: true });
 });
 
+test("accepts command requesters from IOTA mainnet", () => {
+  const request = signedRequest({ requestedBy: { did: `did:iota:0x${"67".repeat(32)}` } });
+  assert.equal(verifySimulatorCommand(request, { assetId, interfaceId, signingKey, signingKeyId, now }), request);
+});
+
 test("rejects tampered, expired and safety commands", () => {
   const tampered = signedRequest();
   tampered.command.name = "resumeSimulation";

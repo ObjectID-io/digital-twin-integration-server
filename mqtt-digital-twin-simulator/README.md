@@ -8,7 +8,9 @@ With dedicated Twin credentials, the dataset topic is read exactly from the down
 
 ### Dedicated Twin credentials (recommended)
 
-First download the tenant administration file from **Webview → Integration**; this is required before Twin creation and must remain on a trusted operator system. After creating a Twin, download its one-time `objectid.device-provisioning.v1` file and start the simulator with that file:
+First download the tenant administration file from **Webview → Integration**; this is required before Twin creation and must remain on a trusted operator system. After creating each Twin, download its one-time `objectid.device-provisioning.v1` file. A simulator installation can run any number of these Twin-scoped files concurrently: every Twin gets an independent MQTT connection, client identity, ACL, telemetry sequence, scenario and command subscription.
+
+For a first bootstrap file, start the simulator with:
 
 ```bash
 export SIM_INTEGRATION_CONFIG_FILE=/absolute/path/objectid-dtis-free-customer.json
@@ -16,9 +18,9 @@ docker compose -f docker-compose.yml -f compose.simulator-tenant.yml \
   --profile simulator up -d --build mqtt-digital-twin-simulator
 ```
 
-The simulator reads the MQTT endpoint, one-time password, Twin-scoped username, bound Twin ID and the exact state/dataset/command topics from that file. Its broker ACL cannot access another Twin and the file contains no tenant REST API key. Once installed, it takes precedence over legacy service-account variables; dedicated `SIM_MQTT_*` override variables remain available for diagnostics. Never commit the downloaded file: it contains live credentials. Older tenant configuration files remain accepted for migration.
+The simulator reads the MQTT endpoint, one-time password, Twin-scoped username, bound Twin ID and the exact state/dataset/command topics from each file. A device credential can access only its assigned Twin and contains no tenant REST API key. Never commit a downloaded file: it contains live credentials. Older tenant configuration files remain accepted for migration.
 
-Alternatively, open `https://dt-simulator.objectid.io`, select the per-Twin JSON in **Integration credentials**, enter the simulator administration password and choose **Upload & apply**. The server validates the file, stores the MQTT subset with mode `0600`, and restarts automatically. The administration password is read from `/run/secrets/sim_control_password` and is never stored by the browser.
+Open `https://dt-simulator.objectid.io`, select one or more per-Twin JSON files in **Add simulated Twins**, enter the simulator administration password and choose **Add Twin files**. The server validates every file, stores it separately under `/data/twins` with mode `0600`, and starts or replaces only that Twin runtime. Existing simulations continue without a restart. Use the Twin selector to inspect and control a simulation; **Remove** deletes only its local simulator configuration and never deletes the on-chain Digital Twin. The administration password is read from `/run/secrets/sim_control_password` and is never stored by the browser.
 
 On the VPS, read that administration password with:
 
@@ -27,10 +29,7 @@ cd ~/digital-twin-integration-server
 cat secrets/sim_control_password.txt
 ```
 
-Before the first valid upload, the container may connect with the legacy broker
-account but stays paused with `twinId=unknown`; it cannot publish telemetry to a
-retired or placeholder Twin. After upload, `/api/status` must report
-`credentialSource: "integration-file"`, the expected Twin ID and `paused: false`.
+Before the first valid upload, the container may connect with the legacy broker account but stays paused with `twinId=unknown`; it cannot publish telemetry to a retired or placeholder Twin. After upload, `/api/status` returns a `twins` array. Each entry must report `credentialSource: "integration-file"`, its expected Twin ID and `paused: false`.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -38,6 +37,7 @@ retired or placeholder Twin. After upload, `/api/status` must report
 | `MQTT_USERNAME` | `objectid` | Broker username. |
 | `MQTT_PASSWORD_FILE` | `/run/secrets/mqtt_password` | Docker secret containing the password. |
 | `OBJECTID_INTEGRATION_CONFIG_FILE` | unset | Downloaded DTIS integration configuration JSON. |
+| `OBJECTID_SIMULATOR_CONFIG_DIR` | `/data/twins` | Persistent directory containing one protected configuration file per simulated Twin. |
 | `SIM_TWIN_ID` | first Twin in configuration | Selects a Twin when the downloaded configuration contains several. |
 | `MQTT_TOPIC` | `objectid/twins/telemetry/dataset` | Destination topic. |
 | `SIM_INTERVAL_MS` | `5000` | Sample interval, minimum 1000 ms. |
@@ -62,4 +62,4 @@ docker compose logs -f mqtt-digital-twin-simulator digital-twin-integration-serv
 curl --fail https://dt-simulator.objectid.io/api/status | jq
 ```
 
-Open `https://dt-simulator.objectid.io` to inject CNC fault scenarios and control the telemetry stream without authentication. Each scenario transition publishes one state message, producing an on-chain `OIDTwinState` and `EVENT_STATE_PUBLISHED` Digital Thread record through the integration server. Repeated telemetry samples remain in the aggregated dataset and do not consume one subscription operation credit each.
+Open `https://dt-simulator.objectid.io` to select a simulated Twin, inject CNC fault scenarios and control its telemetry stream. Each scenario transition publishes one state message, producing an on-chain `OIDTwinState` and `EVENT_STATE_PUBLISHED` Digital Thread record through the integration server. Repeated telemetry samples remain in the aggregated dataset and do not consume one subscription operation credit each.

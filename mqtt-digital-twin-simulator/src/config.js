@@ -7,6 +7,15 @@ export async function loadSimulatorConfig(env = process.env, read = readFile) {
     try { integration = parseIntegrationConfig(await read(integrationFile, "utf8")); }
     catch (error) { if (error?.code !== "ENOENT") throw error; }
   }
+  return buildSimulatorConfig(integration, env, read);
+}
+
+export async function loadSimulatorConfigFromValue(value, env = process.env, read = readFile, twinId) {
+  const integration = parseIntegrationConfig(JSON.stringify(value));
+  return buildSimulatorConfig(integration, { ...env, SIM_TWIN_ID: twinId ?? integration.objectid.twinIds[0] }, read);
+}
+
+async function buildSimulatorConfig(integration, env, read) {
   const requestedTwinId = pick(env.SIM_TWIN_ID, integration?.objectid?.twinIds?.[0], env.SIM_ASSET_ID, "unknown").toLowerCase();
   const topicSet = integration?.mqtt?.topics?.find((item) => String(item?.twinId).toLowerCase() === requestedTwinId);
   const tenantId = String(integration?.objectid?.tenantId ?? "").trim();
@@ -21,6 +30,7 @@ export async function loadSimulatorConfig(env = process.env, read = readFile) {
     mqttUrl: pick(env.SIM_MQTT_URL, integration?.mqtt?.endpoint, env.MQTT_URL, "mqtt://mosquitto:1883"),
     username: pick(env.SIM_MQTT_USERNAME, integration?.mqtt?.username, env.MQTT_USERNAME, "objectid"),
     password,
+    clientId: pick(integration?.mqtt?.clientId),
     passwordFile: passwordFile || null,
     topic: pick(env.SIM_MQTT_TOPIC_OVERRIDE, topicSet?.dataset, env.MQTT_TOPIC, tenantRoot ? `${tenantRoot}/telemetry/dataset` : "objectid/twins/telemetry/dataset"),
     stateTopic: pick(env.SIM_STATE_TOPIC_OVERRIDE, topicSet?.state, env.SIM_STATE_TOPIC, tenantRoot ? `${tenantRoot}/telemetry/state` : "objectid/twins/telemetry/state"),
@@ -29,7 +39,7 @@ export async function loadSimulatorConfig(env = process.env, read = readFile) {
     assetId: requestedTwinId,
     network,
     tenantId: tenantId || null,
-    machineName: pick(env.SIM_MACHINE_NAME, "mqtt-digital-twin"),
+    machineName: pick(integration?.twin?.name, integration?.device?.name, env.SIM_MACHINE_NAME, "mqtt-digital-twin"),
     commandInterfaceId: pick(env.SIM_COMMAND_INTERFACE_ID, "urn:objectid:interface:simulator-control:v1"),
     commandSigningKeyFile: pick(env.SIM_COMMAND_SIGNING_KEY_FILE, "/run/secrets/command_signing_key"),
     commandSigningKeyId: pick(env.SIM_COMMAND_SIGNING_KEY_ID, "dtis-command-v1"),
@@ -37,11 +47,12 @@ export async function loadSimulatorConfig(env = process.env, read = readFile) {
     credentialSource: integration ? "integration-file" : "environment",
   };
   config.commandTopic = pick(env.SIM_COMMAND_TOPIC_OVERRIDE, topicSet?.commandRequests, env.SIM_COMMAND_TOPIC, `${topicPrefix}/twins/${config.assetId}/commands/request`);
+  config.commandResultsTopic = pick(topicSet?.commandResults, `${topicPrefix}/twins/${config.assetId}/commands/+/result`);
   validate(config, Boolean(integration));
   return config;
 }
 
-function parseIntegrationConfig(raw) {
+export function parseIntegrationConfig(raw) {
   let value;
   try { value = JSON.parse(String(raw)); }
   catch { throw new Error("ObjectID integration configuration file is not valid JSON"); }

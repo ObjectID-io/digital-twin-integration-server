@@ -65,6 +65,9 @@ test("loads a Twin-scoped device configuration", async () => {
   assert.equal(config.topic, deviceIntegration.mqtt.topics.dataset);
   assert.equal(config.stateTopic, deviceIntegration.mqtt.topics.state);
   assert.equal(config.commandTopic, deviceIntegration.mqtt.topics.commandRequests);
+  assert.equal(config.commandResultsTopic, deviceIntegration.mqtt.topics.commandResults);
+  assert.equal(config.clientId, deviceIntegration.mqtt.clientId);
+  assert.equal(config.machineName, "Packaging line");
 });
 
 test("keeps uploaded credentials authoritative while allowing simulator settings and explicit overrides", async () => {

@@ -193,6 +193,7 @@ services:
       SIM_COMMAND_SIGNING_KEY_FILE: /run/secrets/command_signing_key
       SIM_COMMAND_SIGNING_KEY_ID: dtis-command-v1
       OBJECTID_INTEGRATION_CONFIG_FILE: /data/integration.json
+      OBJECTID_SIMULATOR_CONFIG_DIR: /data/twins
       SIM_CONTROL_PASSWORD_FILE: /run/secrets/sim_control_password
       HEALTH_PORT: "8081"
     secrets:

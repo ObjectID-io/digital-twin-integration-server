@@ -15,7 +15,7 @@ export function verifySimulatorCommand(request, { assetId, interfaceId, signingK
   if (!UUID_URN.test(String(request.commandId ?? ""))) fail("COMMAND_ID_INVALID", "commandId must be a UUID URN");
   if (request.twinId !== assetId) fail("COMMAND_TWIN_MISMATCH", "Command targets a different Digital Twin");
   if (request.interfaceId !== interfaceId) fail("COMMAND_INTERFACE_MISMATCH", "Command targets an unsupported interface");
-  if (!/^did:iota:[^:]+:0x[0-9a-f]+$/i.test(String(request.requestedBy?.did ?? ""))) fail("COMMAND_REQUESTER_INVALID", "Command requester must be an IOTA DID");
+  if (!/^did:iota:(?:[a-z0-9_-]+:)?0x[0-9a-f]+$/i.test(String(request.requestedBy?.did ?? ""))) fail("COMMAND_REQUESTER_INVALID", "Command requester must be an IOTA DID");
   if (request.proof?.type !== "IotaPersonalMessage" || request.proof?.canonicalization !== "RFC8785" || !request.proof?.signature) fail("COMMAND_PROOF_INVALID", "Verified caller proof is missing");
   const requestedAt = Date.parse(request.requestedAt);
   const expiresAt = Date.parse(request.expiresAt);

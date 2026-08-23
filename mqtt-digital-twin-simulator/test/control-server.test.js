@@ -45,12 +45,10 @@ test("exposes the demo control API and applies commands", async (context) => {
 
 test("protects and installs an uploaded integration configuration", async (context) => {
   let installed;
-  let restartRequested = false;
   const server = createControlServer({
     status: { connected: false }, control: { scenario: "normal", paused: true }, port: 0,
     publishNow: async () => undefined, adminPassword: "admin-secret",
-    installIntegrationConfig: async (value) => { installed = value; return { tenantId: "free-a", twinIds: ["0xtwin"] }; },
-    restartForConfiguration: () => { restartRequested = true; },
+    installIntegrationConfig: async (value) => { installed = value; return { installed: 1, twins: [{ twinId: "0xtwin" }] }; },
   });
   context.after(() => server.close());
   await once(server, "listening");
@@ -58,8 +56,27 @@ test("protects and installs an uploaded integration configuration", async (conte
   const denied = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-simulator-admin-password": "wrong" }, body: "{}" });
   assert.equal(denied.status, 401);
   const accepted = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-simulator-admin-password": "admin-secret" }, body: JSON.stringify({ mqtt: { endpoint: "wss://dtis.objectid.io/mqtt" } }) });
-  assert.equal(accepted.status, 202);
+  assert.equal(accepted.status, 201);
   assert.deepEqual(installed, { mqtt: { endpoint: "wss://dtis.objectid.io/mqtt" } });
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  assert.equal(restartRequested, true);
+  assert.equal((await accepted.json()).restarting, false);
+});
+
+test("routes controls and removal to a selected Twin in a simulator fleet", async (context) => {
+  const calls = [];
+  const server = createControlServer({
+    port: 0,
+    getStatus: () => ({ connected: true, configured: 2, twins: [{ twinId: "0xa", connected: true }, { twinId: "0xb", connected: true }] }),
+    controlTwin: async (command) => { calls.push(["control", command.twinId]); return { twinId: command.twinId, scenario: command.scenario }; },
+    adminPassword: "admin-secret",
+    removeIntegrationConfig: async (twinId) => { calls.push(["remove", twinId]); return { twinId }; },
+  });
+  context.after(() => server.close());
+  await once(server, "listening");
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const controlled = await fetch(`${baseUrl}/api/control`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ twinId: "0xb", action: "scenario", scenario: "overheat" }) });
+  assert.equal(controlled.status, 200);
+  assert.equal((await controlled.json()).twinId, "0xb");
+  const removed = await fetch(`${baseUrl}/api/integration`, { method: "DELETE", headers: { "content-type": "application/json", "x-simulator-admin-password": "admin-secret" }, body: JSON.stringify({ twinId: "0xa" }) });
+  assert.equal(removed.status, 200);
+  assert.deepEqual(calls, [["control", "0xb"], ["remove", "0xa"]]);
 });
