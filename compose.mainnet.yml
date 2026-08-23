@@ -34,6 +34,7 @@ services:
       DTIS_MQTT_TOPIC_PREFIX: objectid/mainnet/tenants
       DTIS_MQTT_PASSWORD_FILE: /mqtt-auth/password_file
       DTIS_MQTT_ACL_FILE: /mqtt-auth/acl_file
+      MQTT_USERNAME: ${MQTT_USERNAME:-objectid_mainnet}
       DTIS_COMMANDS_ENABLED: "false"
     volumes: !override
       - ./config/config.vps-mainnet.yaml:/config/config.yaml:ro
