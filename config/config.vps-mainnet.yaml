@@ -15,7 +15,6 @@ objectid:
     addressCredential: DTIS_SIGNER_ADDRESS
     controllerCapCredential: DTIS_TWIN_CONTROLLER_CAP_ID
     subscriptionCredential: DTIS_SUBSCRIPTION_ACCOUNT_ID
-    subscriptionAdminCapCredential: DTIS_SUBSCRIPTION_ADMIN_CAP_ID
     delegatedAccounts: true
     clockId: "0x6"
     gasBudget: 100000000
@@ -79,17 +78,16 @@ security:
   tenantRegistryCredential: DTIS_TENANTS_JSON
   defaultTenantId: objectid-dtis-public
   rateLimitPerMinute: 120
-  testnetFreeSubscriptions:
-    enabled: false
-    provisioningKeyCredential: DTIS_TESTNET_PROVISIONING_KEY
-    dynamicTenantFile: /data/testnet-tenants.json
-    periodDays: 30
-    publicApiUrl: https://dtis.objectid.io/api/v1
+  tenantProvisioning:
+    enabled: true
+    provisioningKeyCredential: DTIS_TENANT_PROVISIONING_KEY
+    dynamicTenantFile: /data/mainnet-tenants.json
+    publicApiUrl: https://dtis.objectid.io/mainnet/api/v1
     mqtt:
       passwordFile: /mqtt-auth/password_file
       aclFile: /mqtt-auth/acl_file
       serviceUsername: objectid
-      publicUrl: wss://dtis.objectid.io/mqtt
+      publicUrl: wss://dtis.objectid.io/mqtt-mainnet
 
 cache:
   type: redis

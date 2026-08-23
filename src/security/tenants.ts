@@ -298,7 +298,7 @@ export class TenantRegistry {
   }
 
   private provisioning() {
-    return this.config.tenantProvisioning ?? this.config.testnetFreeSubscriptions;
+    return this.config.tenantProvisioning;
   }
 }
 

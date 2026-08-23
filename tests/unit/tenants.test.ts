@@ -47,7 +47,7 @@ describe("tenant accounting registry", () => {
 
   it("persists and authenticates a dynamically provisioned testnet tenant", async () => {
     const directory = await mkdtemp(join(tmpdir(), "dtis-tenants-"));
-    const config = testConfig({ security: { testnetFreeSubscriptions: { enabled: true, provisioningKeyCredential: "PROVISIONING_KEY", dynamicTenantFile: join(directory, "tenants.json"), periodDays: 30 } } });
+    const config = testConfig({ security: { tenantProvisioning: { enabled: true, provisioningKeyCredential: "PROVISIONING_KEY", dynamicTenantFile: join(directory, "tenants.json") } } });
     const credentials: CredentialProvider = { async get(name) { return name === "DTIS_TENANTS_JSON" ? JSON.stringify({ tenants: [] }) : undefined; } };
     const dynamic = new TenantRegistry(config.security, credentials);
     const accounting = { tenantId: "free-a", customerId: "free-a", ownerDid: `did:iota:testnet:${objectId("a")}`, subscriptionId: objectId("2") };

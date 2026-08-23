@@ -72,18 +72,17 @@ public DTIS and assign another integration controller without recreating the sub
 5. Create new Twin objects through the authenticated tenant API. They are owned by the customer DID
    and the assigned DTIS is recorded as steward.
 
-## Free testnet onboarding
+## Service-controlled subscription onboarding
 
-The hosted testnet DTIS may enable `security.testnetFreeSubscriptions`. A trusted Webview BFF calls
-`POST /internal/testnet/free-subscriptions` with `DTIS_TESTNET_PROVISIONING_KEY` after it has verified
-control of the customer's DID. DTIS provisions a 30-day Base account, stores only a SHA-256 hash of
-the generated tenant API key, and returns the key once to the BFF for encrypted storage. Dynamic
-tenants are persisted in `/data/testnet-tenants.json`. Expired free accounts are renewed lazily on
-the next authenticated tenant request, retaining the SubscriptionAccount and resetting the Base
-allowance. This endpoint is disabled outside testnet.
+Subscription provisioning is intentionally outside DTIS. The trusted Webview supervisor owns the
+network-specific `SubscriptionAdminCap`, creates or renews the on-chain account, and then calls
+`POST /internal/integration-accounts` with `DTIS_TENANT_PROVISIONING_KEY`. DTIS validates the active
+account and its owner/controller relationship directly on IOTA before creating a tenant. Dynamic
+tenants are persisted in the configured network-specific registry file.
 
-Both Gas Stations must allow the controlled package targets `create_customer_subscription`,
-`renew_subscription`, and `create_twin_for_subscription_owner` before onboarding is enabled.
+DTIS therefore remains a generic industrial integration component: it never holds billing keys,
+Stripe secrets or `SubscriptionAdminCap`. Its Gas Station allowlist needs only the operational Twin
+targets used by the integration service, not `create_customer_subscription` or `renew_subscription`.
 
 ## External API and MQTT credentials
 

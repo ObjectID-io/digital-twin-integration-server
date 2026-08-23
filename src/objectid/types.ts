@@ -78,8 +78,6 @@ export interface AccountingContext {
 }
 
 export interface ObjectIdAdapter {
-  provisionFreeTestnetSubscription?(ownerDid: string, customerId: string, periodDays: number, plan?: number): Promise<{ subscriptionId: string; digest: string }>;
-  renewFreeTestnetSubscription?(subscriptionId: string, periodDays: number, plan?: number): Promise<{ digest: string }>;
   initialize?(): Promise<void>;
   getSubscription?(accounting?: AccountingContext): Promise<SubscriptionStatus>;
   isReady(): Promise<boolean>;

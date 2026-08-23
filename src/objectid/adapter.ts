@@ -40,16 +40,6 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
     return this.statePublisher.getSubscription(accounting);
   }
 
-  async provisionFreeTestnetSubscription(ownerDid: string, customerId: string, periodDays: number, plan = 1) {
-    if (!this.statePublisher) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription provisioning requires an enabled signer", 503, "OBJECTID");
-    return this.statePublisher.provisionFreeTestnetSubscription(ownerDid, customerId, periodDays, plan);
-  }
-
-  async renewFreeTestnetSubscription(subscriptionId: string, periodDays: number, plan = 1) {
-    if (!this.statePublisher) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription renewal requires an enabled signer", 503, "OBJECTID");
-    return this.statePublisher.renewFreeTestnetSubscription(subscriptionId, periodDays, plan);
-  }
-
   async isReady() {
     try { await this.oid.session.config(this.config.objectid.network); return true; } catch { return false; }
   }

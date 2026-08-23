@@ -37,16 +37,14 @@ The Move call repeats the material controller, subscription, period and credit
 checks atomically. A trusted DTIS therefore cannot spend another customer's
 subscription merely because a caller supplies an object ID.
 
-## Hosted testnet subscription
+## Subscription authority boundary
 
-The Webview BFF proves control of a DID and calls the protected
-`POST /internal/testnet/free-subscriptions` endpoint with the shared
-provisioning key. DTIS creates one 30-day Base account and returns its generated
-tenant API key once to the BFF for encrypted storage.
-
-Expired free testnet accounts renew lazily on the next authenticated request.
-Renewal retains the same `SubscriptionAccount`, resets its period allowance and
-does not recreate Twins. The endpoint is unavailable outside testnet.
+DTIS never owns or uses `SubscriptionAdminCap`. The service supervisor in the
+Webview control plane creates and renews `SubscriptionAccount` objects after
+testnet policy checks or verified mainnet billing events. Only after the
+on-chain account is active does the Webview call `POST /internal/integration-accounts`.
+DTIS independently verifies the supplied account on IOTA, then creates the
+generic tenant API and MQTT credentials required for integration.
 
 ## Tenant and Twin credential lifecycle
 

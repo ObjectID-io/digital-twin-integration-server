@@ -110,7 +110,6 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const realtime = new TwinRealtimeHub();
   const commands = new CommandService(config.commands, connectors.get("mqtt"));
   const retention = new StorageRetentionService(config.retention, storage, objectid);
-  const renewalChecks = new Map<string, number>();
   const publicAccessCache = new Map<string, { checkedAt: number; twinPublic: boolean; dataPublic: boolean }>();
 
   app.get("/health", (_request, response) => response.json({ status: "ok", stateless: true, timestamp: new Date().toISOString() }));
@@ -190,29 +189,6 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
         void ensureAccess().then((allowed) => { if (allowed && open) response.write(": heartbeat\n\n"); });
       }, 10_000);
       request.on("close", () => { open = false; clearInterval(heartbeat); unsubscribe(); });
-    } catch (error) { next(error); }
-  });
-
-  app.post("/internal/testnet/free-subscriptions", async (request, response, next) => {
-    try {
-      const { free, ownerDid } = await assertProvisioningRequest(request, request.body?.ownerDid);
-      const requestedPlan = testnetPlanCode(request.body?.plan);
-      const tenantId = `free-${ownerDid.slice(-16)}`;
-      const customerId = tenantId;
-      let accounting = await tenants.findByOwnerDid(ownerDid);
-      let digest: string | undefined;
-      if (!accounting) {
-        if (!objectid.provisionFreeTestnetSubscription) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription provisioning is unavailable", 503, "OBJECTID");
-        const created = await objectid.provisionFreeTestnetSubscription(ownerDid, customerId, free.periodDays, requestedPlan);
-        digest = created.digest;
-        accounting = { tenantId, customerId, ownerDid, subscriptionId: created.subscriptionId };
-      } else if (await tenants.isDynamic(ownerDid) && objectid.getSubscription && objectid.renewFreeTestnetSubscription) {
-        const status = await objectid.getSubscription(accounting);
-        if (status.plan.code !== requestedPlan || !status.current) digest = (await objectid.renewFreeTestnetSubscription(accounting.subscriptionId, free.periodDays, requestedPlan)).digest;
-      }
-      const apiKey = randomBytes(32).toString("hex");
-      await tenants.saveDynamic(accounting, apiKey);
-      response.status(digest ? 201 : 200).set("Cache-Control", "no-store").json({ ...accounting, apiKey, digest, plan: testnetPlanName(requestedPlan), free: true });
     } catch (error) { next(error); }
   });
 
@@ -313,60 +289,8 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     } catch (error) { next(error); }
   });
 
-  app.get("/internal/testnet/integration-credentials", async (request, response, next) => {
-    try {
-      const { free, ownerDid } = await assertProvisioningRequest(request, request.query.ownerDid);
-      const status = await tenants.credentialStatus(ownerDid);
-      response.set("Cache-Control", "no-store").json(credentialStatusResponse(status, free));
-    } catch (error) { next(error); }
-  });
-
-  app.post("/internal/testnet/integration-credentials/rotate", async (request, response, next) => {
-    try {
-      const { free, ownerDid } = await assertProvisioningRequest(request, request.body?.ownerDid);
-      const accounting = await tenants.findByOwnerDid(ownerDid);
-      if (!accounting || !await tenants.isDynamic(ownerDid)) throw new AppError("AUTH_TENANT_UNKNOWN", "A free testnet subscription is required", 404, "AUTHORIZATION");
-      const summaries = await objectid.findTwinsByDid(ownerDid);
-      const twinIds: string[] = [];
-      for (const summary of summaries) {
-        try { await assertAccountingTwin(accounting, summary.twinId); twinIds.push(summary.twinId.toLowerCase()); }
-        catch (error) { if (!(error instanceof AppError) || error.code !== "OBJECTID_TENANT_TWIN_MISMATCH") throw error; }
-      }
-      const apiKey = randomBytes(32).toString("hex");
-      const mqttPassword = randomBytes(32).toString("base64url");
-      const mqttUsername = `oid_${accounting.tenantId.replace(/[^a-z0-9_-]/gi, "_")}`;
-      const status = await tenants.rotateExternalCredentials(ownerDid, apiKey, mqttUsername, mqttPassword, twinIds);
-      response.set("Cache-Control", "no-store").json({
-        ...credentialStatusResponse(status, free),
-        oneTime: true,
-        apiKey,
-        mqttPassword,
-      });
-    } catch (error) { next(error); }
-  });
-
-  app.delete("/internal/testnet/integration-credentials", async (request, response, next) => {
-    try {
-      const { free, ownerDid } = await assertProvisioningRequest(request, request.body?.ownerDid);
-      const status = await tenants.revokeExternalCredentials(ownerDid);
-      response.set("Cache-Control", "no-store").json(credentialStatusResponse(status, free));
-    } catch (error) { next(error); }
-  });
-
   const api = express.Router();
   api.use(authMiddleware(auth));
-  api.use(async (request, _response, next) => {
-    try {
-      const accounting = request.auth?.accounting; const free = config.security.testnetFreeSubscriptions;
-      const now = Date.now(); const lastCheck = accounting ? renewalChecks.get(accounting.tenantId) ?? 0 : 0;
-      if (accounting && free?.enabled && now - lastCheck >= 300_000 && await tenants.isDynamic(accounting.ownerDid) && objectid.getSubscription && objectid.renewFreeTestnetSubscription) {
-        renewalChecks.set(accounting.tenantId, now);
-        const status = await objectid.getSubscription(accounting);
-        if (!status.current && BigInt(status.periodEnd) <= BigInt(Date.now())) await objectid.renewFreeTestnetSubscription(accounting.subscriptionId, free.periodDays, status.plan.code);
-      }
-      next();
-    } catch (error) { next(error); }
-  });
   api.use(idempotencyMiddleware(idempotency, config.idempotency.ttlMs));
   api.get("/capabilities", (_request, response) => response.json({
     apiVersion: "v1",
@@ -621,18 +545,8 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     await worker.enqueue(worker.createJob("PUBLISH_STATE", mapped.twinId, mapped.state, key, accounting));
   }
 
-  async function assertProvisioningRequest(request: express.Request, rawOwnerDid: unknown) {
-    const free = config.security.testnetFreeSubscriptions;
-    if (config.objectid.network !== "testnet" || !free?.enabled) throw new AppError("OBJECTID_FREE_SUBSCRIPTION_DISABLED", "Free subscription onboarding is disabled", 404, "AUTHORIZATION");
-    const expected = await requiredCredential(credentials, free.provisioningKeyCredential);
-    if (request.header("x-provisioning-key") !== expected) throw new AppError("AUTH_INVALID_PROVISIONING_KEY", "Invalid provisioning key", 401, "AUTHORIZATION");
-    const ownerDid = String(rawOwnerDid ?? "").toLowerCase();
-    if (!/^did:iota:testnet:0x[0-9a-f]{64}$/.test(ownerDid)) throw new AppError("OBJECTID_OWNER_DID_INVALID", "A valid testnet owner DID is required", 422, "VALIDATION");
-    return { free, ownerDid };
-  }
-
   async function assertTenantProvisioningRequest(request: express.Request, rawOwnerDid: unknown) {
-    const provisioning = config.security.tenantProvisioning ?? config.security.testnetFreeSubscriptions;
+    const provisioning = config.security.tenantProvisioning;
     if (!provisioning?.enabled) throw new AppError("OBJECTID_TENANT_PROVISIONING_DISABLED", "Tenant provisioning is disabled", 404, "AUTHORIZATION");
     const expected = await requiredCredential(credentials, provisioning.provisioningKeyCredential);
     if (request.header("x-provisioning-key") !== expected) throw new AppError("AUTH_INVALID_PROVISIONING_KEY", "Invalid provisioning key", 401, "AUTHORIZATION");
@@ -687,16 +601,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
 
 function optionalTwinId(value: unknown) { return typeof value === "string" && value ? value : undefined; }
 
-function testnetPlanCode(value: unknown) {
-  const normalized = String(value ?? "base").trim().toLowerCase();
-  const code = ({ base: 1, advanced: 2, pro: 3, enterprise: 4 } as const)[normalized as "base" | "advanced" | "pro" | "enterprise"];
-  if (!code) throw new AppError("OBJECTID_SUBSCRIPTION_PLAN_INVALID", "Plan must be base, advanced, pro or enterprise", 422, "VALIDATION");
-  return code;
-}
-
-function testnetPlanName(code: number) { return ({ 1: "base", 2: "advanced", 3: "pro", 4: "enterprise" } as const)[code as 1 | 2 | 3 | 4]; }
-
-function credentialStatusResponse(status: TenantCredentialStatus, provisioning: NonNullable<AppConfig["security"]["tenantProvisioning"] | AppConfig["security"]["testnetFreeSubscriptions"]>, network = "testnet") {
+function credentialStatusResponse(status: TenantCredentialStatus, provisioning: NonNullable<AppConfig["security"]["tenantProvisioning"]>, network = "testnet") {
   const apiUrl = String(provisioning.publicApiUrl ?? "https://dtis.objectid.io/api/v1").replace(/\/$/, "");
   const mqttUrl = provisioning.mqtt?.publicUrl ?? "wss://dtis.objectid.io/mqtt";
   const topicPrefix = String(provisioning.topicPrefix ?? "objectid/tenants").replace(/^\/+|\/+$/g, "");
@@ -719,7 +624,7 @@ function credentialStatusResponse(status: TenantCredentialStatus, provisioning: 
   };
 }
 
-function deviceCredentialResponse(status: Awaited<ReturnType<TenantRegistry["twinCredentialStatus"]>>, provisioning: NonNullable<AppConfig["security"]["tenantProvisioning"] | AppConfig["security"]["testnetFreeSubscriptions"]>, network = "testnet") {
+function deviceCredentialResponse(status: Awaited<ReturnType<TenantRegistry["twinCredentialStatus"]>>, provisioning: NonNullable<AppConfig["security"]["tenantProvisioning"]>, network = "testnet") {
   const mqttUrl = provisioning.mqtt?.publicUrl ?? "wss://dtis.objectid.io/mqtt";
   const topicPrefix = String(provisioning.topicPrefix ?? "objectid/tenants").replace(/^\/+|\/+$/g, "");
   const commandPrefix = topicPrefix.endsWith("/tenants") ? topicPrefix.slice(0, -8) : topicPrefix;
