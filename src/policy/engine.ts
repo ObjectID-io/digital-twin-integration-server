@@ -12,6 +12,7 @@ export enum TwinAction {
   ModifyComposition = "modify_composition",
   ModifyIdentifierMapping = "modify_identifier_mapping",
   ModifyMetadata = "modify_metadata",
+  DeleteTwin = "delete_twin",
   ExecuteCommand = "execute_command",
 }
 export type TwinActionValue = `${TwinAction}`;

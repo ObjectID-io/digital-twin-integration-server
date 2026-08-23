@@ -464,7 +464,11 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       const twinId = String(request.params.id).toLowerCase();
       if (request.header("x-objectid-confirm-delete")?.toLowerCase() !== twinId) throw new AppError("OBJECTID_DELETE_CONFIRMATION_REQUIRED", "Confirm deletion with the exact Twin ID", 422, "VALIDATION");
       if (!objectid.deleteTwin) throw new AppError("OBJECTID_DELETE_UNAVAILABLE", "Twin deletion is unavailable", 503, "OBJECTID");
-      response.set("Cache-Control", "no-store").json(await objectid.deleteTwin(twinId, request.auth?.accounting));
+      await authorize(request, twinId, TwinAction.DeleteTwin);
+      const result = await objectid.deleteTwin(twinId, request.auth?.accounting);
+      const accounting = request.auth?.accounting;
+      if (accounting && await tenants.isDynamic(accounting.ownerDid)) await tenants.revokeTwinCredentials(accounting.ownerDid, twinId);
+      response.set("Cache-Control", "no-store").json(result);
     } catch (error) { next(error); }
   });
   api.get("/profiles", async (_request, response, next) => { try { response.json(await profiles.listProfiles()); } catch (error) { next(error); } });

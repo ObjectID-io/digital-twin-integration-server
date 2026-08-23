@@ -20,6 +20,7 @@ export class FakeObjectIdAdapter implements ObjectIdAdapter {
     });
   }
   async createTwin(input: any) { const id = input.id ?? `0xtwin${++this.sequence}`; const twin = { id, ...input }; this.twins.set(id, twin); this.calls.push({ method: "createTwin", input }); return twin; }
+  async deleteTwin(id: string) { this.twins.delete(id); this.calls.push({ method: "deleteTwin", twinId: id, input: null }); return { id, deleted: true, digest: "fake-delete-digest" }; }
   async updateTwin(id: string, input: any) { const twin = { ...(this.twins.get(id) ?? { id }), ...input }; this.twins.set(id, twin); this.calls.push({ method: "updateTwin", twinId: id, input }); return twin; }
   async publishState(twinId: string, input: unknown) { return this.record("publishState", twinId, input); }
   async addDataset(twinId: string, input: unknown) { return this.record("addDataset", twinId, input); }

@@ -5,7 +5,7 @@ import { FakeObjectIdAdapter } from "../fixtures/fakeObjectId.js";
 import { testConfig } from "../fixtures/config.js";
 
 describe("mutation API policy integration", () => {
-  async function mutate(roleType: string, method: "state" | "model" | "event" | "maturity" | "interface" | "metadata") {
+  async function mutate(roleType: string, method: "state" | "model" | "event" | "maturity" | "interface" | "metadata" | "delete") {
     const adapter = new FakeObjectIdAdapter();
     adapter.twins.set("0xtwin", { id: "0xtwin" });
     adapter.setChildren("0xtwin", "OIDTwinRoleGrant", [{ twinId: "0xtwin", subjectDid: "did:caller", roleType }]);
@@ -15,6 +15,7 @@ describe("mutation API policy integration", () => {
     if (method === "event") return request(app).post("/api/v1/twins/0xtwin/events").send({ eventType: 120 });
     if (method === "interface") return request(app).post("/api/v1/twins/0xtwin/interfaces").send({ protocol: "MQTT", networkType: 2 });
     if (method === "metadata") return request(app).patch("/api/v1/twins/0xtwin").send({ name: "Updated", description: "", mutableMetadata: "{}" });
+    if (method === "delete") return request(app).delete("/api/v1/twins/0xtwin").set("x-objectid-confirm-delete", "0xtwin");
     return request(app).post("/api/v1/twins/0xtwin/maturity/assessments").send({ maturityLevel: 3 });
   }
 
@@ -28,6 +29,8 @@ describe("mutation API policy integration", () => {
   it("allows OWNER mutations", async () => expect((await mutate("OWNER", "interface")).status).toBe(202));
   it("allows STEWARD to update Twin metadata", async () => expect((await mutate("STEWARD", "metadata")).status).toBe(200));
   it("denies OPERATOR from updating Twin metadata", async () => expectDenied(await mutate("OPERATOR", "metadata")));
+  it("allows OWNER to delete a Twin", async () => expect((await mutate("OWNER", "delete")).status).toBe(200));
+  it("denies OPERATOR from deleting a Twin", async () => expectDenied(await mutate("OPERATOR", "delete")));
 });
 
 function expectDenied(response: request.Response) {
