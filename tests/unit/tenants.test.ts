@@ -56,9 +56,13 @@ describe("tenant accounting registry", () => {
     await expect(dynamic.isDynamic(accounting.ownerDid)).resolves.toBe(true);
     const rotated = await dynamic.rotateExternalCredentials(accounting.ownerDid, "external-key", "mqtt-free-a", "mqtt-secret", [objectId("9")]);
     expect(rotated).toMatchObject({ active: true, version: 1, mqttUsername: "mqtt-free-a", twinIds: [objectId("9")] });
+    const device = await dynamic.rotateTwinCredentials(accounting.ownerDid, objectId("9"), "mqtt-device-9", "device-secret");
+    expect(device).toMatchObject({ active: true, version: 1, mqttUsername: "mqtt-device-9", twinId: objectId("9") });
+    await expect(dynamic.twinCredentialStatus(accounting.ownerDid, objectId("9"))).resolves.toMatchObject({ active: true, version: 1 });
     await expect(dynamic.authenticateApiKey("external-key")).resolves.toEqual(accounting);
     const revoked = await dynamic.revokeExternalCredentials(accounting.ownerDid);
     expect(revoked).toMatchObject({ active: false, version: 1 });
+    await expect(dynamic.twinCredentialStatus(accounting.ownerDid, objectId("9"))).resolves.toMatchObject({ active: false, version: 1 });
     await expect(dynamic.authenticateApiKey("external-key")).rejects.toMatchObject({ code: "AUTH_INVALID_API_KEY" });
     await expect(dynamic.authenticateApiKey("generated-tenant-key")).resolves.toEqual(accounting);
   });

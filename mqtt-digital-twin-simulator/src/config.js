@@ -10,7 +10,9 @@ export async function loadSimulatorConfig(env = process.env, read = readFile) {
   const requestedTwinId = pick(env.SIM_TWIN_ID, integration?.objectid?.twinIds?.[0], env.SIM_ASSET_ID, "unknown").toLowerCase();
   const topicSet = integration?.mqtt?.topics?.find((item) => String(item?.twinId).toLowerCase() === requestedTwinId);
   const tenantId = String(integration?.objectid?.tenantId ?? "").trim();
-  const tenantRoot = validTwinId(requestedTwinId) && tenantId ? `objectid/tenants/${tenantId}/twins/${requestedTwinId}` : "";
+  const network = pick(integration?.objectid?.network, env.IOTA_NETWORK, "testnet").toLowerCase();
+  const topicPrefix = network === "mainnet" ? "objectid/mainnet" : "objectid";
+  const tenantRoot = validTwinId(requestedTwinId) && tenantId ? `${topicPrefix}/tenants/${tenantId}/twins/${requestedTwinId}` : "";
   const passwordFile = integration ? pick(env.SIM_MQTT_PASSWORD_FILE) : pick(env.MQTT_PASSWORD_FILE, "/run/secrets/mqtt_password");
   const password = passwordFile
     ? String(await read(passwordFile, "utf8")).trimEnd()
@@ -25,6 +27,7 @@ export async function loadSimulatorConfig(env = process.env, read = readFile) {
     qos: integer(env, "MQTT_QOS", 1, 0, 2),
     intervalMs: integer(env, "SIM_INTERVAL_MS", 5000, 1000, 86_400_000),
     assetId: requestedTwinId,
+    network,
     tenantId: tenantId || null,
     machineName: pick(env.SIM_MACHINE_NAME, "mqtt-digital-twin"),
     commandInterfaceId: pick(env.SIM_COMMAND_INTERFACE_ID, "urn:objectid:interface:simulator-control:v1"),
@@ -33,7 +36,7 @@ export async function loadSimulatorConfig(env = process.env, read = readFile) {
     healthPort: integer(env, "HEALTH_PORT", 8081, 1, 65535),
     credentialSource: integration ? "integration-file" : "environment",
   };
-  config.commandTopic = pick(env.SIM_COMMAND_TOPIC_OVERRIDE, topicSet?.commandRequests, env.SIM_COMMAND_TOPIC, `objectid/twins/${config.assetId}/commands/request`);
+  config.commandTopic = pick(env.SIM_COMMAND_TOPIC_OVERRIDE, topicSet?.commandRequests, env.SIM_COMMAND_TOPIC, `${topicPrefix}/twins/${config.assetId}/commands/request`);
   validate(config, Boolean(integration));
   return config;
 }
@@ -43,6 +46,19 @@ function parseIntegrationConfig(raw) {
   try { value = JSON.parse(String(raw)); }
   catch { throw new Error("ObjectID integration configuration file is not valid JSON"); }
   if (!value || typeof value !== "object" || !value.mqtt || !value.objectid) throw new Error("ObjectID integration configuration must contain objectid and mqtt sections");
+  if (value.specVersion === "objectid.device-provisioning.v1") {
+    if (!validTwinId(value.twin?.id) || !value.mqtt.topics || Array.isArray(value.mqtt.topics)) {
+      throw new Error("ObjectID device configuration does not contain a valid Twin topic assignment");
+    }
+    value = {
+      ...value,
+      objectid: { ...value.objectid, twinIds: [value.twin.id] },
+      mqtt: {
+        ...value.mqtt,
+        topics: [{ twinId: value.twin.id, ...value.mqtt.topics }],
+      },
+    };
+  }
   if (!Array.isArray(value.objectid.twinIds) || !Array.isArray(value.mqtt.topics)) throw new Error("ObjectID integration configuration does not contain Twin topic assignments");
   return value;
 }
@@ -50,6 +66,7 @@ function parseIntegrationConfig(raw) {
 export function validateIntegrationConfig(value) {
   const parsed = parseIntegrationConfig(JSON.stringify(value));
   if (!/^[a-z0-9_-]{1,96}$/i.test(String(parsed.objectid.tenantId ?? ""))) throw new Error("Integration configuration contains an invalid tenant ID");
+  if (parsed.objectid.network !== undefined && !["testnet", "mainnet"].includes(String(parsed.objectid.network))) throw new Error("Integration configuration contains an invalid IOTA network");
   if (!/^(wss|mqtts):\/\//i.test(String(parsed.mqtt.endpoint ?? ""))) throw new Error("Uploaded MQTT endpoint must use WSS or MQTTS");
   if (!String(parsed.mqtt.username ?? "") || !String(parsed.mqtt.password ?? "")) throw new Error("Integration configuration is missing MQTT credentials");
   for (const twinId of parsed.objectid.twinIds) if (!validTwinId(twinId)) throw new Error("Integration configuration contains an invalid Twin ID");
@@ -62,6 +79,7 @@ export function validateIntegrationConfig(value) {
 
 function validate(config, hasIntegration) {
   if (!/^(mqtt|mqtts|ws|wss):\/\//i.test(config.mqttUrl)) throw new Error("MQTT_URL must use mqtt, mqtts, ws or wss");
+  if (!["testnet", "mainnet"].includes(config.network)) throw new Error("IOTA network must be testnet or mainnet");
   if (!config.username || !config.password) throw new Error(`MQTT credentials are missing${hasIntegration ? " from the integration configuration" : ""}`);
   if (!validTwinId(config.assetId) && config.assetId !== "unknown") throw new Error("SIM_ASSET_ID must be a valid ObjectID Twin ID");
   if (hasIntegration && !validTwinId(config.assetId)) throw new Error("The integration configuration does not contain a usable Twin ID");

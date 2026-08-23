@@ -86,8 +86,9 @@ export function mqttMatch(pattern: string, topic: string) {
 
 export function dynamicTenantMapping(mapping: MqttMapping, topic: string): MqttMapping | undefined {
   const parts = topic.split("/");
-  if (parts.length !== 7 || parts[0] !== "objectid" || parts[1] !== "tenants" || parts[3] !== "twins" || parts[5] !== "telemetry") return undefined;
-  const tenantId = parts[2] ?? ""; const twinId = parts[4] ?? ""; const mode = parts[6] ?? "";
+  const tenantIndex = parts.indexOf("tenants");
+  if (parts[0] !== "objectid" || tenantIndex < 1 || parts.length !== tenantIndex + 6 || parts[tenantIndex + 2] !== "twins" || parts[tenantIndex + 4] !== "telemetry") return undefined;
+  const tenantId = parts[tenantIndex + 1] ?? ""; const twinId = parts[tenantIndex + 3] ?? ""; const mode = parts[tenantIndex + 5] ?? "";
   if (!/^[a-z0-9_-]{1,96}$/i.test(tenantId) || !/^0x[0-9a-f]{64}$/i.test(twinId) || !["state", "dataset"].includes(mode)) return undefined;
   return { ...mapping, tenantId, twinId: twinId.toLowerCase(), mode: mode as "state" | "dataset" };
 }

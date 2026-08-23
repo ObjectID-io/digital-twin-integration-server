@@ -215,6 +215,103 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     } catch (error) { next(error); }
   });
 
+  app.post("/internal/integration-accounts", async (request, response, next) => {
+    try {
+      const { provisioning, ownerDid } = await assertTenantProvisioningRequest(request, request.body?.ownerDid);
+      const subscriptionId = String(request.body?.subscriptionId ?? "").toLowerCase();
+      const customerId = String(request.body?.customerId ?? "").trim();
+      if (!/^0x[0-9a-f]{64}$/.test(subscriptionId) || !/^[a-z0-9._-]{1,128}$/i.test(customerId)) {
+        throw new AppError("OBJECTID_SUBSCRIPTION_REGISTRATION_INVALID", "A valid subscription ID and customer ID are required", 422, "VALIDATION");
+      }
+      const tenantId = `${config.objectid.network}-${ownerDid.slice(-16)}`;
+      const accounting = { tenantId, customerId, ownerDid, subscriptionId };
+      if (!objectid.getSubscription) throw new AppError("OBJECTID_SUBSCRIPTION_UNAVAILABLE", "Subscription accounting is unavailable", 503, "OBJECTID");
+      const subscription = await objectid.getSubscription(accounting);
+      if (!subscription.current) throw new AppError("OBJECTID_SUBSCRIPTION_INACTIVE", "The on-chain subscription is not active", 402, "AUTHORIZATION");
+      const apiKey = randomBytes(32).toString("hex");
+      await tenants.saveDynamic(accounting, apiKey);
+      response.status(201).set("Cache-Control", "no-store").json({
+        ...accounting, apiKey, network: config.objectid.network, plan: subscription.plan.name,
+        provisioning: { publicApiUrl: provisioning.publicApiUrl, mqttUrl: provisioning.mqtt?.publicUrl },
+      });
+    } catch (error) { next(error); }
+  });
+
+  app.get("/internal/integration-credentials", async (request, response, next) => {
+    try {
+      const { provisioning, ownerDid } = await assertTenantProvisioningRequest(request, request.query.ownerDid);
+      response.set("Cache-Control", "no-store").json(credentialStatusResponse(await tenants.credentialStatus(ownerDid), provisioning, config.objectid.network));
+    } catch (error) { next(error); }
+  });
+
+  app.post("/internal/integration-credentials/rotate", async (request, response, next) => {
+    try {
+      const { provisioning, ownerDid } = await assertTenantProvisioningRequest(request, request.body?.ownerDid);
+      const accounting = await tenants.findByOwnerDid(ownerDid);
+      if (!accounting || !await tenants.isDynamic(ownerDid)) throw new AppError("AUTH_TENANT_UNKNOWN", "A registered on-chain subscription is required", 404, "AUTHORIZATION");
+      if (!objectid.getSubscription || !(await objectid.getSubscription(accounting)).current) throw new AppError("OBJECTID_SUBSCRIPTION_INACTIVE", "The on-chain subscription is not active", 402, "AUTHORIZATION");
+      const summaries = await objectid.findTwinsByDid(ownerDid);
+      const twinIds: string[] = [];
+      for (const summary of summaries) {
+        try { await assertAccountingTwin(accounting, summary.twinId); twinIds.push(summary.twinId.toLowerCase()); }
+        catch (error) { if (!(error instanceof AppError) || error.code !== "OBJECTID_TENANT_TWIN_MISMATCH") throw error; }
+      }
+      const apiKey = randomBytes(32).toString("hex");
+      const mqttPassword = randomBytes(32).toString("base64url");
+      const mqttUsername = `oid_${config.objectid.network}_${accounting.tenantId.replace(/[^a-z0-9_-]/gi, "_")}`;
+      const status = await tenants.rotateExternalCredentials(ownerDid, apiKey, mqttUsername, mqttPassword, twinIds);
+      response.set("Cache-Control", "no-store").json({
+        ...credentialStatusResponse(status, provisioning, config.objectid.network), oneTime: true, apiKey, mqttPassword,
+      });
+    } catch (error) { next(error); }
+  });
+
+  app.delete("/internal/integration-credentials", async (request, response, next) => {
+    try {
+      const { provisioning, ownerDid } = await assertTenantProvisioningRequest(request, request.body?.ownerDid);
+      response.set("Cache-Control", "no-store").json(credentialStatusResponse(await tenants.revokeExternalCredentials(ownerDid), provisioning, config.objectid.network));
+    } catch (error) { next(error); }
+  });
+
+  app.get("/internal/twin-credentials", async (request, response, next) => {
+    try {
+      const { provisioning, ownerDid } = await assertTenantProvisioningRequest(request, request.query.ownerDid);
+      const twinId = requiredProvisioningTwinId(request.query.twinId);
+      const accounting = await tenants.findByOwnerDid(ownerDid);
+      if (!accounting || !await tenants.isDynamic(ownerDid)) throw new AppError("AUTH_TENANT_UNKNOWN", "A registered on-chain subscription is required", 404, "AUTHORIZATION");
+      await assertAccountingTwin(accounting, twinId);
+      response.set("Cache-Control", "no-store").json(deviceCredentialResponse(await tenants.twinCredentialStatus(ownerDid, twinId), provisioning, config.objectid.network));
+    } catch (error) { next(error); }
+  });
+
+  app.post("/internal/twin-credentials/rotate", async (request, response, next) => {
+    try {
+      const { provisioning, ownerDid } = await assertTenantProvisioningRequest(request, request.body?.ownerDid);
+      const twinId = requiredProvisioningTwinId(request.body?.twinId);
+      const accounting = await tenants.findByOwnerDid(ownerDid);
+      if (!accounting || !await tenants.isDynamic(ownerDid)) throw new AppError("AUTH_TENANT_UNKNOWN", "A registered on-chain subscription is required", 404, "AUTHORIZATION");
+      if (!objectid.getSubscription || !(await objectid.getSubscription(accounting)).current) throw new AppError("OBJECTID_SUBSCRIPTION_INACTIVE", "The on-chain subscription is not active", 402, "AUTHORIZATION");
+      await assertAccountingTwin(accounting, twinId);
+      const mqttPassword = randomBytes(32).toString("base64url");
+      const mqttUsername = `oid_device_${config.objectid.network}_${accounting.tenantId.replace(/[^a-z0-9_-]/gi, "_")}_${twinId.slice(2, 10)}`;
+      const status = await tenants.rotateTwinCredentials(ownerDid, twinId, mqttUsername, mqttPassword);
+      response.set("Cache-Control", "no-store").json({
+        ...deviceCredentialResponse(status, provisioning, config.objectid.network), oneTime: true, mqttPassword,
+      });
+    } catch (error) { next(error); }
+  });
+
+  app.delete("/internal/twin-credentials", async (request, response, next) => {
+    try {
+      const { provisioning, ownerDid } = await assertTenantProvisioningRequest(request, request.body?.ownerDid);
+      const twinId = requiredProvisioningTwinId(request.body?.twinId);
+      const accounting = await tenants.findByOwnerDid(ownerDid);
+      if (!accounting || !await tenants.isDynamic(ownerDid)) throw new AppError("AUTH_TENANT_UNKNOWN", "A registered on-chain subscription is required", 404, "AUTHORIZATION");
+      await assertAccountingTwin(accounting, twinId);
+      response.set("Cache-Control", "no-store").json(deviceCredentialResponse(await tenants.revokeTwinCredentials(ownerDid, twinId), provisioning, config.objectid.network));
+    } catch (error) { next(error); }
+  });
+
   app.get("/internal/testnet/integration-credentials", async (request, response, next) => {
     try {
       const { free, ownerDid } = await assertProvisioningRequest(request, request.query.ownerDid);
@@ -529,6 +626,19 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     return { free, ownerDid };
   }
 
+  async function assertTenantProvisioningRequest(request: express.Request, rawOwnerDid: unknown) {
+    const provisioning = config.security.tenantProvisioning ?? config.security.testnetFreeSubscriptions;
+    if (!provisioning?.enabled) throw new AppError("OBJECTID_TENANT_PROVISIONING_DISABLED", "Tenant provisioning is disabled", 404, "AUTHORIZATION");
+    const expected = await requiredCredential(credentials, provisioning.provisioningKeyCredential);
+    if (request.header("x-provisioning-key") !== expected) throw new AppError("AUTH_INVALID_PROVISIONING_KEY", "Invalid provisioning key", 401, "AUTHORIZATION");
+    const ownerDid = String(rawOwnerDid ?? "").toLowerCase();
+    const networkPattern = config.objectid.network === "mainnet"
+      ? /^did:iota:0x[0-9a-f]{64}$/
+      : new RegExp(`^did:iota:${escapeRegExp(config.objectid.network)}:0x[0-9a-f]{64}$`);
+    if (!networkPattern.test(ownerDid)) throw new AppError("OBJECTID_OWNER_DID_INVALID", `A valid ${config.objectid.network} owner DID is required`, 422, "VALIDATION");
+    return { provisioning, ownerDid };
+  }
+
   async function connectorAccounting(tenantId: string) {
     if (tenantId) return tenants.get(tenantId);
     const fallback = await tenants.default();
@@ -572,11 +682,13 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
 
 function optionalTwinId(value: unknown) { return typeof value === "string" && value ? value : undefined; }
 
-function credentialStatusResponse(status: TenantCredentialStatus, free: NonNullable<AppConfig["security"]["testnetFreeSubscriptions"]>) {
-  const apiUrl = String(free.publicApiUrl ?? "https://dtis.objectid.io/api/v1").replace(/\/$/, "");
-  const mqttUrl = free.mqtt?.publicUrl ?? "wss://dtis.objectid.io/mqtt";
+function credentialStatusResponse(status: TenantCredentialStatus, provisioning: NonNullable<AppConfig["security"]["tenantProvisioning"] | AppConfig["security"]["testnetFreeSubscriptions"]>, network = "testnet") {
+  const apiUrl = String(provisioning.publicApiUrl ?? "https://dtis.objectid.io/api/v1").replace(/\/$/, "");
+  const mqttUrl = provisioning.mqtt?.publicUrl ?? "wss://dtis.objectid.io/mqtt";
+  const topicPrefix = String(provisioning.topicPrefix ?? "objectid/tenants").replace(/^\/+|\/+$/g, "");
+  const commandPrefix = topicPrefix.endsWith("/tenants") ? topicPrefix.slice(0, -8) : topicPrefix;
   return {
-    ...status,
+    ...status, network,
     endpoint: apiUrl,
     mqtt: {
       endpoint: mqttUrl,
@@ -584,14 +696,50 @@ function credentialStatusResponse(status: TenantCredentialStatus, free: NonNulla
       twinIds: status.twinIds,
       topics: status.twinIds.map((twinId) => ({
         twinId,
-        state: `objectid/tenants/${status.tenantId}/twins/${twinId}/telemetry/state`,
-        dataset: `objectid/tenants/${status.tenantId}/twins/${twinId}/telemetry/dataset`,
-        commandRequests: `objectid/twins/${twinId}/commands/request`,
-        commandResults: `objectid/twins/${twinId}/commands/+/result`,
+        state: `${topicPrefix}/${status.tenantId}/twins/${twinId}/telemetry/state`,
+        dataset: `${topicPrefix}/${status.tenantId}/twins/${twinId}/telemetry/dataset`,
+        commandRequests: `${commandPrefix}/twins/${twinId}/commands/request`,
+        commandResults: `${commandPrefix}/twins/${twinId}/commands/+/result`,
       })),
     },
   };
 }
+
+function deviceCredentialResponse(status: Awaited<ReturnType<TenantRegistry["twinCredentialStatus"]>>, provisioning: NonNullable<AppConfig["security"]["tenantProvisioning"] | AppConfig["security"]["testnetFreeSubscriptions"]>, network = "testnet") {
+  const mqttUrl = provisioning.mqtt?.publicUrl ?? "wss://dtis.objectid.io/mqtt";
+  const topicPrefix = String(provisioning.topicPrefix ?? "objectid/tenants").replace(/^\/+|\/+$/g, "");
+  const commandPrefix = topicPrefix.endsWith("/tenants") ? topicPrefix.slice(0, -8) : topicPrefix;
+  const root = `${topicPrefix}/${status.tenantId}/twins/${status.twinId}`;
+  return {
+    specVersion: "objectid.device-provisioning.v1",
+    network,
+    tenantId: status.tenantId,
+    subscriptionId: status.subscriptionId,
+    twinId: status.twinId,
+    active: status.active,
+    version: status.version,
+    rotatedAt: status.rotatedAt,
+    revokedAt: status.revokedAt,
+    mqtt: {
+      endpoint: mqttUrl,
+      username: status.mqttUsername,
+      topics: {
+        state: `${root}/telemetry/state`,
+        dataset: `${root}/telemetry/dataset`,
+        commandRequests: `${commandPrefix}/twins/${status.twinId}/commands/request`,
+        commandResults: `${commandPrefix}/twins/${status.twinId}/commands/+/result`,
+      },
+    },
+  };
+}
+
+function requiredProvisioningTwinId(value: unknown) {
+  const twinId = String(value ?? "").toLowerCase();
+  if (!/^0x[0-9a-f]{64}$/.test(twinId)) throw new AppError("OBJECTID_TWIN_ID_INVALID", "A valid 32-byte Twin object ID is required", 422, "VALIDATION");
+  return twinId;
+}
+
+function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 function threadOptions(query: Record<string, unknown>): PaginationOptions {
   const number = (value: unknown) => value === undefined ? undefined : Number(value);

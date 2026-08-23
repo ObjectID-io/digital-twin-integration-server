@@ -18,6 +18,7 @@ describe("connector mappings", () => {
   it("extracts and validates tenant-scoped MQTT topics", () => {
     const twinId = `0x${"a".repeat(64)}`;
     expect(dynamicTenantMapping({ topic: "objectid/tenants/+/twins/+/telemetry/state", twinId: "dynamic", dynamicTenantTopic: true }, `objectid/tenants/free-a/twins/${twinId}/telemetry/state`)).toMatchObject({ tenantId: "free-a", twinId, mode: "state" });
+    expect(dynamicTenantMapping({ topic: "objectid/mainnet/tenants/+/twins/+/telemetry/dataset", twinId: "dynamic", dynamicTenantTopic: true }, `objectid/mainnet/tenants/base-a/twins/${twinId}/telemetry/dataset`)).toMatchObject({ tenantId: "base-a", twinId, mode: "dataset" });
     expect(dynamicTenantMapping({ topic: "#", twinId: "dynamic" }, "objectid/tenants/free-a/twins/not-an-id/telemetry/state")).toBeUndefined();
   });
   it("observes OPC-UA subscription callback failures", async () => {

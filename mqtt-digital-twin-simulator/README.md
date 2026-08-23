@@ -2,13 +2,13 @@
 
 Simulates an industrial machine and publishes JSON telemetry to the MQTT broker used by the ObjectID Digital Twin Integration Server.
 
-With dedicated tenant credentials, the dataset topic is read exactly from the downloaded ACL configuration. `objectid/twins/telemetry/dataset` is only the legacy service-account fallback. Samples are emitted every five seconds and aggregated by the integration server into five-minute datasets. This avoids invoking the on-chain state operation, and therefore consuming a subscription operation credit, for every simulated sample.
+With dedicated Twin credentials, the dataset topic is read exactly from the downloaded ACL configuration. `objectid/twins/telemetry/dataset` is only the legacy service-account fallback. Samples are emitted every five seconds and aggregated by the integration server into five-minute datasets. This avoids invoking the on-chain state operation, and therefore consuming a subscription operation credit, for every simulated sample.
 
 ## Configuration
 
-### Dedicated tenant credentials (recommended)
+### Dedicated Twin credentials (recommended)
 
-Download the JSON file from **Webview → Integration → Integration credentials**, then start the simulator with the tenant overlay:
+First download the tenant administration file from **Webview → Integration**; this is required before Twin creation and must remain on a trusted operator system. After creating a Twin, download its one-time `objectid.device-provisioning.v1` file and start the simulator with that file:
 
 ```bash
 export SIM_INTEGRATION_CONFIG_FILE=/absolute/path/objectid-dtis-free-customer.json
@@ -16,9 +16,9 @@ docker compose -f docker-compose.yml -f compose.simulator-tenant.yml \
   --profile simulator up -d --build mqtt-digital-twin-simulator
 ```
 
-The simulator reads the MQTT endpoint, one-time password, tenant username, Twin ID and the exact state/dataset/command topics from that file. When the file contains more than one Twin, set `SIM_TWIN_ID` to select one. Once installed, the file takes precedence over legacy service-account variables; dedicated `SIM_MQTT_*` override variables remain available for diagnostics. Never commit the downloaded file: it contains live credentials.
+The simulator reads the MQTT endpoint, one-time password, Twin-scoped username, bound Twin ID and the exact state/dataset/command topics from that file. Its broker ACL cannot access another Twin and the file contains no tenant REST API key. Once installed, it takes precedence over legacy service-account variables; dedicated `SIM_MQTT_*` override variables remain available for diagnostics. Never commit the downloaded file: it contains live credentials. Older tenant configuration files remain accepted for migration.
 
-Alternatively, open `https://dt-simulator.objectid.io`, select the downloaded JSON in **Integration credentials**, enter the simulator administration password and choose **Upload & apply**. The server validates the file, discards the unused REST API key, stores the MQTT subset with mode `0600`, and restarts automatically. The administration password is read from `/run/secrets/sim_control_password` and is never stored by the browser.
+Alternatively, open `https://dt-simulator.objectid.io`, select the per-Twin JSON in **Integration credentials**, enter the simulator administration password and choose **Upload & apply**. The server validates the file, stores the MQTT subset with mode `0600`, and restarts automatically. The administration password is read from `/run/secrets/sim_control_password` and is never stored by the browser.
 
 On the VPS, read that administration password with:
 

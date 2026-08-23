@@ -1,0 +1,147 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  bodyLimitBytes: 1048576
+  trustProxy: true
+
+objectid:
+  network: mainnet
+  rpcUrl: https://api.mainnet.iota.cafe
+  packageId: "0x9c0bba22b50956cd713053804dd058d2fc41a064ba8b1a64bac9d74c15f572e7"
+  timeoutMs: 30000
+  signer:
+    enabled: true
+    seedCredential: DTIS_IOTA_SEED
+    addressCredential: DTIS_SIGNER_ADDRESS
+    controllerCapCredential: DTIS_TWIN_CONTROLLER_CAP_ID
+    subscriptionCredential: DTIS_SUBSCRIPTION_ACCOUNT_ID
+    subscriptionAdminCapCredential: DTIS_SUBSCRIPTION_ADMIN_CAP_ID
+    delegatedAccounts: true
+    clockId: "0x6"
+    gasBudget: 100000000
+    gasStations:
+      - url: https://m-gas1.objectid.io
+        tokenCredential: DTIS_GAS_STATION_1_TOKEN
+        reserveDurationSeconds: 30
+
+profiles:
+  directory: /profiles
+
+connectors:
+  rest:
+    enabled: true
+    timeoutMs: 10000
+  mqtt:
+    enabled: true
+    required: true
+    url: mqtt://mosquitto:1883
+    username: "${credential:MQTT_USERNAME}"
+    password: "${credential:MQTT_PASSWORD}"
+    rejectUnauthorized: true
+    connectTimeoutMs: 10000
+    reconnectPeriodMs: 5000
+    mappings:
+      - topic: objectid/tenants/+/twins/+/telemetry/state
+        twinId: dynamic
+        dynamicTenantTopic: true
+        mode: state
+        aspect: telemetry
+        sampleType: observed
+        qos: 1
+      - topic: objectid/tenants/+/twins/+/telemetry/dataset
+        twinId: dynamic
+        dynamicTenantTopic: true
+        mode: dataset
+        datasetType: telemetry
+        windowSeconds: 300
+        schemaUri: objectid-profile://interfaces/mqtt/v1
+        qos: 1
+  opcua:
+    enabled: false
+  modbus:
+    enabled: false
+
+commands:
+  enabled: false
+  storeFile: /data/commands.json
+  requestTopicTemplate: objectid/twins/{twinId}/commands/request
+  resultTopic: objectid/twins/+/commands/+/result
+  signingKeyFile: /run/secrets/command_signing_key
+  signingKeyId: dtis-command-v1
+  catalogs: []
+
+security:
+  credentialProvider: file
+  credentialFile: /run/secrets/dtis_credentials
+  authMode: api-key
+  apiKeyCredential: DTIS_API_KEY
+  jwtSecretCredential: DTIS_JWT_SECRET
+  tenantRegistryCredential: DTIS_TENANTS_JSON
+  defaultTenantId: objectid-dtis-public
+  rateLimitPerMinute: 120
+  testnetFreeSubscriptions:
+    enabled: false
+    provisioningKeyCredential: DTIS_TESTNET_PROVISIONING_KEY
+    dynamicTenantFile: /data/testnet-tenants.json
+    periodDays: 30
+    publicApiUrl: https://dtis.objectid.io/api/v1
+    mqtt:
+      passwordFile: /mqtt-auth/password_file
+      aclFile: /mqtt-auth/acl_file
+      serviceUsername: objectid
+      publicUrl: wss://dtis.objectid.io/mqtt
+
+cache:
+  type: redis
+  ttlMs: 15000
+  redisUrl: redis://redis:6379
+
+queue:
+  type: memory
+  maxAttempts: 5
+  baseDelayMs: 500
+  maxDelayMs: 30000
+  pollIntervalMs: 100
+
+policy:
+  cacheTtlMs: 15000
+
+idempotency:
+  provider: redis
+  ttlMs: 300000
+  redisUrl: redis://redis:6379
+
+dataset:
+  directory: /data
+  aggregation:
+    enabled: true
+    defaultWindowSeconds: 300
+    shutdownFlushTimeoutMs: 10000
+
+storage:
+  defaultProvider: backblaze
+  providers:
+    backblaze:
+      type: s3
+      endpoint: https://s3.eu-central-003.backblazeb2.com
+      region: eu-central-003
+      bucket: OID-Digital-Twin
+      forcePathStyle: true
+      prefix: mainnet/twins/
+      accessKeyEnv: B2_KEY_ID
+      secretKeyEnv: B2_APPLICATION_KEY
+      required: true
+  routes:
+    dataset: backblaze
+    model: backblaze
+    evidence: backblaze
+    artifact: backblaze
+    event-payload: backblaze
+
+retention:
+  enabled: true
+  defaultDays: 5
+  intervalMs: 3600000
+  startupDelayMs: 60000
+  maxDeletesPerRun: 500
+  ownerPolicies: []

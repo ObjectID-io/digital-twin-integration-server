@@ -19,6 +19,25 @@ const integration = {
   },
 };
 
+const deviceIntegration = {
+  specVersion: "objectid.device-provisioning.v1",
+  generatedAt: "2026-08-23T10:00:00.000Z",
+  objectid: { network: "mainnet", tenantId: "free-customer", subscriptionId: `0x${"b".repeat(64)}` },
+  twin: { id: twinId, name: "Packaging line", type: "machine" },
+  mqtt: {
+    endpoint: "wss://dtis.objectid.io/mqtt-mainnet",
+    clientId: "oid_device_mainnet_free-customer_aaaaaaaa",
+    username: "oid_device_mainnet_free-customer_aaaaaaaa",
+    password: "twin-only-secret",
+    topics: {
+      state: `objectid/mainnet/tenants/free-customer/twins/${twinId}/telemetry/state`,
+      dataset: `objectid/mainnet/tenants/free-customer/twins/${twinId}/telemetry/dataset`,
+      commandRequests: `objectid/mainnet/twins/${twinId}/commands/request`,
+      commandResults: `objectid/mainnet/twins/${twinId}/commands/+/result`,
+    },
+  },
+};
+
 test("loads dedicated tenant credentials and topics from the downloaded configuration", async () => {
   const config = await loadSimulatorConfig(
     { OBJECTID_INTEGRATION_CONFIG_FILE: "/credentials.json" },
@@ -32,6 +51,20 @@ test("loads dedicated tenant credentials and topics from the downloaded configur
   assert.equal(config.stateTopic, integration.mqtt.topics[0].state);
   assert.equal(config.commandTopic, integration.mqtt.topics[0].commandRequests);
   assert.equal(config.credentialSource, "integration-file");
+});
+
+test("loads a Twin-scoped device configuration", async () => {
+  const config = await loadSimulatorConfig(
+    { OBJECTID_INTEGRATION_CONFIG_FILE: "/twin.json" },
+    async () => JSON.stringify(deviceIntegration),
+  );
+  assert.equal(config.network, "mainnet");
+  assert.equal(config.assetId, twinId);
+  assert.equal(config.username, deviceIntegration.mqtt.username);
+  assert.equal(config.password, deviceIntegration.mqtt.password);
+  assert.equal(config.topic, deviceIntegration.mqtt.topics.dataset);
+  assert.equal(config.stateTopic, deviceIntegration.mqtt.topics.state);
+  assert.equal(config.commandTopic, deviceIntegration.mqtt.topics.commandRequests);
 });
 
 test("keeps uploaded credentials authoritative while allowing simulator settings and explicit overrides", async () => {

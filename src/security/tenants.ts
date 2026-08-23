@@ -17,6 +17,15 @@ interface TenantDefinition extends AccountingContext {
   credentialsVersion?: number;
   credentialsRotatedAt?: string;
   credentialsRevokedAt?: string;
+  deviceCredentials?: TwinDeviceCredential[];
+}
+
+interface TwinDeviceCredential {
+  twinId: string;
+  username: string;
+  version: number;
+  rotatedAt: string;
+  revokedAt?: string;
 }
 
 export interface TenantCredentialStatus {
@@ -28,6 +37,17 @@ export interface TenantCredentialStatus {
   revokedAt: string | null;
   mqttUsername: string | null;
   twinIds: string[];
+}
+
+export interface TwinDeviceCredentialStatus {
+  tenantId: string;
+  subscriptionId: string;
+  twinId: string;
+  active: boolean;
+  version: number;
+  rotatedAt: string | null;
+  revokedAt: string | null;
+  mqttUsername: string | null;
 }
 
 const execFileAsync = promisify(execFile);
@@ -69,7 +89,7 @@ export class TenantRegistry {
   }
 
   async saveDynamic(accounting: AccountingContext, apiKey: string) {
-    const file = this.config.testnetFreeSubscriptions?.dynamicTenantFile;
+    const file = this.provisioning()?.dynamicTenantFile;
     if (!file) throw new AppError("CONFIG_DYNAMIC_TENANT_FILE_REQUIRED", "Dynamic tenant storage is not configured", 503, "VALIDATION");
     const state = await readDynamic(file);
     const previous = state.tenants.find((tenant) => String(tenant.ownerDid).toLowerCase() === accounting.ownerDid.toLowerCase());
@@ -82,13 +102,17 @@ export class TenantRegistry {
   }
 
   async isDynamic(ownerDid: string) {
-    const file = this.config.testnetFreeSubscriptions?.dynamicTenantFile;
+    const file = this.provisioning()?.dynamicTenantFile;
     return file ? (await readDynamic(file)).tenants.some((tenant) => String(tenant.ownerDid).toLowerCase() === ownerDid.toLowerCase()) : false;
   }
 
   async credentialStatus(ownerDid: string): Promise<TenantCredentialStatus> {
-    const tenant = await this.dynamicTenant(ownerDid);
-    return statusOf(tenant);
+    const tenant = (await readDynamic(this.dynamicFile())).tenants
+      .find((value) => String(value.ownerDid).toLowerCase() === ownerDid.toLowerCase()) as TenantDefinition | undefined;
+    return tenant ? statusOf(tenant) : {
+      tenantId: "", subscriptionId: "", active: false, version: 0,
+      rotatedAt: null, revokedAt: null, mqttUsername: null, twinIds: [],
+    };
   }
 
   async rotateExternalCredentials(ownerDid: string, apiKey: string, mqttUsername: string, mqttPassword: string, twinIds: string[]) {
@@ -113,6 +137,56 @@ export class TenantRegistry {
     return statusOf(next);
   }
 
+  async twinCredentialStatus(ownerDid: string, twinId: string): Promise<TwinDeviceCredentialStatus> {
+    const tenant = await this.dynamicTenant(ownerDid);
+    const credential = tenant.deviceCredentials?.find((value) => value.twinId.toLowerCase() === twinId.toLowerCase());
+    return twinStatusOf(tenant, twinId, credential);
+  }
+
+  async rotateTwinCredentials(ownerDid: string, twinId: string, mqttUsername: string, mqttPassword: string) {
+    const file = this.dynamicFile();
+    const state = await readDynamic(file);
+    const index = state.tenants.findIndex((tenant) => String(tenant.ownerDid).toLowerCase() === ownerDid.toLowerCase());
+    if (index < 0) throw new AppError("AUTH_TENANT_UNKNOWN", "A dynamic tenant subscription is required", 404, "AUTHORIZATION");
+    const previous = state.tenants[index] as TenantDefinition;
+    const current = previous.deviceCredentials?.find((value) => value.twinId.toLowerCase() === twinId.toLowerCase());
+    const credential: TwinDeviceCredential = {
+      twinId: twinId.toLowerCase(),
+      username: mqttUsername,
+      version: Number(current?.version ?? 0) + 1,
+      rotatedAt: new Date().toISOString(),
+    };
+    const next: TenantDefinition = {
+      ...previous,
+      deviceCredentials: [...(previous.deviceCredentials ?? []).filter((value) => value.twinId.toLowerCase() !== twinId.toLowerCase()), credential],
+    };
+    state.tenants[index] = next;
+    await writeDynamic(file, state);
+    if (current?.username && current.username !== mqttUsername) await this.updateMqttPassword("delete", current.username);
+    await this.updateMqttPassword("upsert", mqttUsername, mqttPassword);
+    await this.rewriteMqttAcl(state.tenants as TenantDefinition[]);
+    return twinStatusOf(next, twinId, credential);
+  }
+
+  async revokeTwinCredentials(ownerDid: string, twinId: string) {
+    const file = this.dynamicFile();
+    const state = await readDynamic(file);
+    const index = state.tenants.findIndex((tenant) => String(tenant.ownerDid).toLowerCase() === ownerDid.toLowerCase());
+    if (index < 0) throw new AppError("AUTH_TENANT_UNKNOWN", "A dynamic tenant subscription is required", 404, "AUTHORIZATION");
+    const previous = state.tenants[index] as TenantDefinition;
+    const current = previous.deviceCredentials?.find((value) => value.twinId.toLowerCase() === twinId.toLowerCase());
+    const revokedAt = new Date().toISOString();
+    const next: TenantDefinition = {
+      ...previous,
+      deviceCredentials: (previous.deviceCredentials ?? []).map((value) => value.twinId.toLowerCase() === twinId.toLowerCase() ? { ...value, revokedAt } : value),
+    };
+    state.tenants[index] = next;
+    await writeDynamic(file, state);
+    if (current?.username) await this.updateMqttPassword("delete", current.username);
+    await this.rewriteMqttAcl(state.tenants as TenantDefinition[]);
+    return twinStatusOf(next, twinId, current ? { ...current, revokedAt } : undefined);
+  }
+
   async revokeExternalCredentials(ownerDid: string) {
     const file = this.dynamicFile();
     const state = await readDynamic(file);
@@ -120,21 +194,26 @@ export class TenantRegistry {
     if (index < 0) throw new AppError("AUTH_TENANT_UNKNOWN", "A dynamic tenant subscription is required", 404, "AUTHORIZATION");
     const previous = state.tenants[index] as TenantDefinition;
     const username = previous.mqttUsername;
+    const revokedAt = new Date().toISOString();
     const next: TenantDefinition = {
       ...previous,
       externalApiKeyHash: undefined,
       mqttTwinIds: [],
-      credentialsRevokedAt: new Date().toISOString(),
+      credentialsRevokedAt: revokedAt,
+      deviceCredentials: (previous.deviceCredentials ?? []).map((credential) => ({ ...credential, revokedAt })),
     };
     state.tenants[index] = next;
     await writeDynamic(file, state);
     if (username) await this.updateMqttPassword("delete", username);
+    for (const credential of previous.deviceCredentials ?? []) {
+      if (!credential.revokedAt) await this.updateMqttPassword("delete", credential.username);
+    }
     await this.rewriteMqttAcl(state.tenants as TenantDefinition[]);
     return statusOf(next);
   }
 
   private dynamicFile() {
-    const file = this.config.testnetFreeSubscriptions?.dynamicTenantFile;
+    const file = this.provisioning()?.dynamicTenantFile;
     if (!file) throw new AppError("CONFIG_DYNAMIC_TENANT_FILE_REQUIRED", "Dynamic tenant storage is not configured", 503, "VALIDATION");
     return file;
   }
@@ -146,7 +225,7 @@ export class TenantRegistry {
   }
 
   private async updateMqttPassword(action: "upsert" | "delete", username: string, password?: string) {
-    const file = this.config.testnetFreeSubscriptions?.mqtt?.passwordFile;
+    const file = this.provisioning()?.mqtt?.passwordFile;
     if (!file) return;
     const args = action === "delete" ? ["-D", file, username] : ["-b", file, username, String(password)];
     try { await execFileAsync("mosquitto_passwd", args); }
@@ -157,21 +236,40 @@ export class TenantRegistry {
   }
 
   private async rewriteMqttAcl(tenants: TenantDefinition[]) {
-    const mqtt = this.config.testnetFreeSubscriptions?.mqtt;
+    const provisioning = this.provisioning();
+    const mqtt = provisioning?.mqtt;
     if (!mqtt?.aclFile) return;
     const lines = [`user ${mqtt.serviceUsername}`, "topic readwrite #", "topic read $SYS/#", ""];
     for (const tenant of tenants.filter((value) => value.mqttUsername && value.externalApiKeyHash && !value.credentialsRevokedAt)) {
       lines.push(`user ${tenant.mqttUsername}`);
       for (const twinId of tenant.mqttTwinIds ?? []) {
-        const root = `objectid/tenants/${tenant.tenantId}/twins/${twinId}`;
+        const prefix = String(provisioning?.topicPrefix ?? "objectid/tenants").replace(/^\/+|\/+$/g, "");
+        const commandPrefix = prefix.endsWith("/tenants") ? prefix.slice(0, -8) : prefix;
+        const root = `${prefix}/${tenant.tenantId}/twins/${twinId}`;
         lines.push(
           `topic write ${root}/telemetry/state`,
           `topic write ${root}/telemetry/dataset`,
-          `topic read objectid/twins/${twinId}/commands/request`,
-          `topic write objectid/twins/${twinId}/commands/+/result`,
+          `topic read ${commandPrefix}/twins/${twinId}/commands/request`,
+          `topic write ${commandPrefix}/twins/${twinId}/commands/+/result`,
         );
       }
       lines.push("");
+    }
+    for (const tenant of tenants) {
+      for (const credential of tenant.deviceCredentials ?? []) {
+        if (credential.revokedAt) continue;
+        const prefix = String(provisioning?.topicPrefix ?? "objectid/tenants").replace(/^\/+|\/+$/g, "");
+        const commandPrefix = prefix.endsWith("/tenants") ? prefix.slice(0, -8) : prefix;
+        const root = `${prefix}/${tenant.tenantId}/twins/${credential.twinId}`;
+        lines.push(
+          `user ${credential.username}`,
+          `topic write ${root}/telemetry/state`,
+          `topic write ${root}/telemetry/dataset`,
+          `topic read ${commandPrefix}/twins/${credential.twinId}/commands/request`,
+          `topic write ${commandPrefix}/twins/${credential.twinId}/commands/+/result`,
+          "",
+        );
+      }
     }
     await mkdir(dirname(mqtt.aclFile), { recursive: true });
     const temporary = `${mqtt.aclFile}.${process.pid}.tmp`;
@@ -188,7 +286,7 @@ export class TenantRegistry {
     const values = Array.isArray(parsed) ? parsed : (parsed as any)?.tenants;
     if (!Array.isArray(values)) throw new AppError("CONFIG_TENANT_REGISTRY_INVALID", "The tenant registry must contain a tenants array", 500, "VALIDATION");
     const staticTenants = values.map((value, index) => validateTenant(value, index));
-    const dynamicFile = this.config.testnetFreeSubscriptions?.dynamicTenantFile;
+    const dynamicFile = this.provisioning()?.dynamicTenantFile;
     const dynamicTenants = dynamicFile ? (await readDynamic(dynamicFile)).tenants.map((value, index) => validateTenant(value, staticTenants.length + index)) : [];
     const tenants = [...new Map([...staticTenants, ...dynamicTenants].map((tenant) => [tenant.tenantId, tenant])).values()];
     const ids = new Set<string>();
@@ -197,6 +295,10 @@ export class TenantRegistry {
       ids.add(tenant.tenantId);
     }
     return tenants;
+  }
+
+  private provisioning() {
+    return this.config.tenantProvisioning ?? this.config.testnetFreeSubscriptions;
   }
 }
 
@@ -214,6 +316,13 @@ function validateTenant(value: any, index: number): TenantDefinition {
     credentialsVersion: Number(value?.credentialsVersion ?? 0),
     credentialsRotatedAt: value?.credentialsRotatedAt ? String(value.credentialsRotatedAt) : undefined,
     credentialsRevokedAt: value?.credentialsRevokedAt ? String(value.credentialsRevokedAt) : undefined,
+    deviceCredentials: Array.isArray(value?.deviceCredentials) ? value.deviceCredentials.map((credential: any) => ({
+      twinId: String(credential?.twinId ?? "").toLowerCase(),
+      username: String(credential?.username ?? ""),
+      version: Number(credential?.version ?? 0),
+      rotatedAt: String(credential?.rotatedAt ?? ""),
+      revokedAt: credential?.revokedAt ? String(credential.revokedAt) : undefined,
+    })).filter((credential: TwinDeviceCredential) => /^0x[0-9a-f]{64}$/.test(credential.twinId) && credential.username && credential.version > 0 && credential.rotatedAt) : [],
   };
   if (!tenant.tenantId || !tenant.customerId || !/^did:iota(?::[a-z0-9-]+)?:0x[0-9a-f]{64}$/i.test(tenant.ownerDid) || (!tenant.apiKeyCredential && !/^[0-9a-f]{64}$/.test(tenant.apiKeyHash ?? "")) || !/^0x[0-9a-f]{64}$/.test(tenant.subscriptionId)) {
     throw new AppError("CONFIG_TENANT_INVALID", `Tenant registry entry ${index} is invalid`, 500, "VALIDATION");
@@ -255,5 +364,18 @@ function statusOf(tenant: TenantDefinition): TenantCredentialStatus {
     revokedAt: tenant.credentialsRevokedAt ?? null,
     mqttUsername: tenant.mqttUsername ?? null,
     twinIds: tenant.mqttTwinIds ?? [],
+  };
+}
+
+function twinStatusOf(tenant: TenantDefinition, twinId: string, credential?: TwinDeviceCredential): TwinDeviceCredentialStatus {
+  return {
+    tenantId: tenant.tenantId,
+    subscriptionId: tenant.subscriptionId,
+    twinId: twinId.toLowerCase(),
+    active: Boolean(credential?.username && !credential.revokedAt),
+    version: Number(credential?.version ?? 0),
+    rotatedAt: credential?.rotatedAt ?? null,
+    revokedAt: credential?.revokedAt ?? null,
+    mqttUsername: credential?.username ?? null,
   };
 }

@@ -1,0 +1,60 @@
+name: objectid-digital-twin-integration-mainnet
+
+services:
+  mosquitto:
+    image: objectid/mosquitto-dtis:mainnet
+    ports: !override
+      - "${MQTT_BIND_ADDRESS:-127.0.0.1}:${MQTT_PORT:-1884}:1883"
+    labels: !override
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.dtis-mainnet-mqtt.rule=Host(`dtis.objectid.io`) && PathPrefix(`/mqtt-mainnet`)"
+      - "traefik.http.routers.dtis-mainnet-mqtt.priority=200"
+      - "traefik.http.routers.dtis-mainnet-mqtt.entrypoints=websecure"
+      - "traefik.http.routers.dtis-mainnet-mqtt.tls=true"
+      - "traefik.http.routers.dtis-mainnet-mqtt.tls.certresolver=myresolver"
+      - "traefik.http.services.dtis-mainnet-mqtt.loadbalancer.server.port=9001"
+
+  digital-twin-integration-server:
+    image: objectid/digital-twin-integration-server:mainnet
+    ports: !override
+      - "${DTIS_BIND_ADDRESS:-127.0.0.1}:${DTIS_PORT:-8083}:8080"
+    environment:
+      DTIS_OBJECTID_NETWORK: mainnet
+      DTIS_OBJECTID_RPC_URL: ${DTIS_OBJECTID_RPC_URL:-https://api.mainnet.iota.cafe}
+      DTIS_OBJECTID_PACKAGE_ID: ${DTIS_OBJECTID_PACKAGE_ID:?set the mainnet oid_twin package ID}
+      DTIS_SERVICE_DID: ${DTIS_SERVICE_DID:?set the mainnet Integration Server DID}
+      DTIS_GAS_STATION_1_URL: ${DTIS_GAS_STATION_1_URL:-https://m-gas1.objectid.io}
+      DTIS_GAS_STATION_2_URL: ""
+      DTIS_TENANT_PROVISIONING_ENABLED: "true"
+      DTIS_TENANT_PROVISIONING_KEY_CREDENTIAL: DTIS_TENANT_PROVISIONING_KEY
+      DTIS_DYNAMIC_TENANT_FILE: /data/mainnet-tenants.json
+      DTIS_PUBLIC_API_URL: https://dtis.objectid.io/mainnet/api/v1
+      DTIS_MQTT_PUBLIC_URL: wss://dtis.objectid.io/mqtt-mainnet
+      DTIS_MQTT_TOPIC_PREFIX: objectid/mainnet/tenants
+      DTIS_MQTT_PASSWORD_FILE: /mqtt-auth/password_file
+      DTIS_MQTT_ACL_FILE: /mqtt-auth/acl_file
+      DTIS_COMMANDS_ENABLED: "false"
+    volumes: !override
+      - ./config/config.vps-mainnet.yaml:/config/config.yaml:ro
+      - command-data:/data
+      - mosquitto-config:/mqtt-auth
+    labels: !override
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.dtis-mainnet.rule=Host(`dtis.objectid.io`) && PathPrefix(`/mainnet`)"
+      - "traefik.http.routers.dtis-mainnet.priority=200"
+      - "traefik.http.routers.dtis-mainnet.entrypoints=websecure"
+      - "traefik.http.routers.dtis-mainnet.tls=true"
+      - "traefik.http.routers.dtis-mainnet.tls.certresolver=myresolver"
+      - "traefik.http.routers.dtis-mainnet.middlewares=dtis-mainnet-strip@docker,dtis-mainnet-sec@docker"
+      - "traefik.http.middlewares.dtis-mainnet-strip.stripprefix.prefixes=/mainnet"
+      - "traefik.http.services.dtis-mainnet.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.dtis-mainnet-sec.headers.stsSeconds=63072000"
+      - "traefik.http.middlewares.dtis-mainnet-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.dtis-mainnet-sec.headers.stsPreload=true"
+      - "traefik.http.middlewares.dtis-mainnet-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.dtis-mainnet-sec.headers.referrerPolicy=no-referrer"
+
+  mqtt-digital-twin-simulator:
+    profiles: ["simulator"]

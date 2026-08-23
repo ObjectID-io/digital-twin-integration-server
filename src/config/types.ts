@@ -39,12 +39,26 @@ export interface AppConfig {
     defaultTenantId?: string;
     serviceDid?: string;
     rateLimitPerMinute: number;
+    tenantProvisioning?: {
+      enabled: boolean;
+      provisioningKeyCredential: string;
+      dynamicTenantFile: string;
+      publicApiUrl?: string;
+      topicPrefix?: string;
+      mqtt?: {
+        passwordFile: string;
+        aclFile: string;
+        serviceUsername: string;
+        publicUrl: string;
+      };
+    };
     testnetFreeSubscriptions?: {
       enabled: boolean;
       provisioningKeyCredential: string;
       dynamicTenantFile: string;
       periodDays: number;
       publicApiUrl?: string;
+      topicPrefix?: string;
       mqtt?: {
         passwordFile: string;
         aclFile: string;

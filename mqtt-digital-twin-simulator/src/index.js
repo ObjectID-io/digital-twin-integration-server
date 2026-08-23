@@ -54,7 +54,7 @@ client.on("error", (error) => {
   log("mqtt_error", { error: error.message });
 });
 
-Object.assign(status, { machineName: config.machineName, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, credentialSource: config.credentialSource });
+Object.assign(status, { machineName: config.machineName, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, network: config.network, credentialSource: config.credentialSource });
 const healthServer = createControlServer({
   status, control, port: config.healthPort, publishNow: publishSample,
   recordTransition: publishStateTransition,
@@ -66,7 +66,7 @@ const healthServer = createControlServer({
 async function installIntegrationConfig(value) {
   const validated = validateIntegrationConfig(value);
   const stored = {
-    objectid: { tenantId: validated.objectid.tenantId, subscriptionId: validated.objectid.subscriptionId, twinIds: validated.objectid.twinIds },
+    objectid: { network: validated.objectid.network ?? "testnet", tenantId: validated.objectid.tenantId, subscriptionId: validated.objectid.subscriptionId, twinIds: validated.objectid.twinIds },
     mqtt: { endpoint: validated.mqtt.endpoint, username: validated.mqtt.username, password: validated.mqtt.password, topics: validated.mqtt.topics },
     generatedAt: validated.generatedAt,
   };
@@ -75,7 +75,7 @@ async function installIntegrationConfig(value) {
   await writeFile(temporary, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
   await chmod(temporary, 0o600);
   await rename(temporary, integrationConfigFile);
-  return { tenantId: validated.objectid.tenantId, twinIds: validated.objectid.twinIds, endpoint: validated.mqtt.endpoint };
+  return { network: validated.objectid.network ?? "testnet", tenantId: validated.objectid.tenantId, twinIds: validated.objectid.twinIds, endpoint: validated.mqtt.endpoint };
 }
 
 async function publishSample() {

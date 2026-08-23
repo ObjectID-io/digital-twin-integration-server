@@ -48,27 +48,36 @@ Expired free testnet accounts renew lazily on the next authenticated request.
 Renewal retains the same `SubscriptionAccount`, resets its period allowance and
 does not recreate Twins. The endpoint is unavailable outside testnet.
 
-## Integration credentials lifecycle
+## Tenant and Twin credential lifecycle
 
 The Webview's **Integration credentials** console uses protected internal
 endpoints; browsers never receive the provisioning key.
 
-1. **Status** reports whether external credentials exist and lists allowed Twin
-   IDs without returning secrets.
-2. **Generate/rotate** creates a tenant API key, MQTT username and MQTT password,
+1. **Tenant status** reports whether administration credentials exist without
+   returning secrets.
+2. **Tenant generate/rotate** creates a tenant API key, MQTT username and MQTT password,
    stores only verifiers/required server state, regenerates Mosquitto ACLs and
    displays secrets once.
-3. **Download** produces a device configuration containing:
+3. **Tenant download** produces an administration configuration containing:
    - DTIS API and MQTT endpoints;
    - tenant ID and API key;
    - MQTT username and password;
    - permitted Twin IDs;
    - exact state, dataset and command topics.
-4. **Revoke** disables external API and MQTT credentials without deleting the
+   The hosted Webview records successful download and does not enable Twin
+   creation before this prerequisite is complete.
+4. **Twin create/provision** issues a different MQTT principal after creation.
+   Its `objectid.device-provisioning.v1` file has no REST key and contains only
+   one Twin ID and that Twin's exact four topic permissions.
+5. **Rotate/revoke** may affect all tenant administration credentials or one
+   Twin device credential independently. Tenant revocation also revokes its
+   active per-Twin principals without deleting the
    DID, subscription or Twins.
 
-Rotation invalidates the previous external credentials. The downloaded JSON is
-a live secret and must never be committed, logged or placed in a public volume.
+Rotation invalidates the previous credential at the selected scope. Both JSON
+files are live secrets and must never be committed, logged or placed in a
+public volume. PLCs, gateways and simulators should receive only their per-Twin
+file.
 
 ## MQTT tenancy and topics
 
@@ -130,22 +139,22 @@ Location publication requires a separate explicit owner/steward action.
 
 The recommended hosted workflow is:
 
-1. create a Twin in the Webview;
-2. generate/rotate and download Integration credentials;
+1. generate and download the tenant administration file in the Webview;
+2. create a Twin and download its non-dismissible per-Twin configuration;
 3. open `https://dt-simulator.objectid.io`;
-4. upload the JSON and enter the password stored on the VPS in
+4. upload the per-Twin JSON and enter the password stored on the VPS in
    `secrets/sim_control_password.txt`;
 5. choose **Upload & apply**.
 
-The simulator validates file size and schema, tenant/Twin consistency, exact
-topics and a secure MQTT endpoint. It discards the unused REST API key, stores
-only the MQTT/ObjectID subset with mode `0600` in the private `simulator-data`
-volume and restarts automatically. Before the first valid upload it starts
-paused with `twinId=unknown`.
+The simulator validates file size and schema, network/Twin consistency, exact
+topics and a secure MQTT endpoint. The per-Twin file contains no REST API key;
+the simulator stores its MQTT/ObjectID subset with mode `0600` in the private
+`simulator-data` volume and restarts automatically. Before the first valid
+upload it starts paused with `twinId=unknown`.
 
-For unattended/self-hosted deployments, mount the downloaded file and set
-`OBJECTID_INTEGRATION_CONFIG_FILE`. If it contains several Twins,
-`SIM_TWIN_ID` selects one; otherwise the first permitted Twin is used.
+For unattended/self-hosted deployments, mount the per-Twin file and set
+`OBJECTID_INTEGRATION_CONFIG_FILE`. Legacy multi-Twin tenant files remain
+accepted for migration, with `SIM_TWIN_ID` selecting the desired Twin.
 
 ## Self-hosted DTIS
 
@@ -197,4 +206,3 @@ files readable by the non-root container user as described in `deploy/VPS.md`.
 | MQTT `Not authorized` | Username/password or generated ACL does not match the tenant configuration |
 | Simulator connected but no ingestion | Wrong Twin/topic selection, revoked credentials or simulator paused |
 | Public Twin is unlocated | Visibility is public but no explicit public on-chain location exists |
-

@@ -54,6 +54,11 @@ function applyEnvironment(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig 
   if (env.DTIS_OBJECTID_RPC_URL) next.objectid.rpcUrl = env.DTIS_OBJECTID_RPC_URL;
   if (env.DTIS_OBJECTID_PACKAGE_ID) next.objectid.packageId = env.DTIS_OBJECTID_PACKAGE_ID;
   if (env.DTIS_SUBSCRIPTION_ACCOUNT_ID && next.objectid.signer) next.objectid.signer.subscriptionCredential = "DTIS_SUBSCRIPTION_ACCOUNT_ID";
+  if (next.objectid.signer?.gasStations) {
+    if (env.DTIS_GAS_STATION_1_URL !== undefined && next.objectid.signer.gasStations[0]) next.objectid.signer.gasStations[0].url = env.DTIS_GAS_STATION_1_URL;
+    if (env.DTIS_GAS_STATION_2_URL !== undefined && next.objectid.signer.gasStations[1]) next.objectid.signer.gasStations[1].url = env.DTIS_GAS_STATION_2_URL;
+    next.objectid.signer.gasStations = next.objectid.signer.gasStations.filter((station) => Boolean(station.url));
+  }
   if (env.DTIS_PROFILES_DIRECTORY) next.profiles.directory = env.DTIS_PROFILES_DIRECTORY;
   if (env.DTIS_AUTH_MODE) next.security.authMode = env.DTIS_AUTH_MODE as AppConfig["security"]["authMode"];
   if (env.DTIS_CREDENTIAL_PROVIDER) next.security.credentialProvider = env.DTIS_CREDENTIAL_PROVIDER as "environment" | "file";
@@ -61,6 +66,32 @@ function applyEnvironment(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig 
   if (env.DTIS_TENANT_REGISTRY_CREDENTIAL) next.security.tenantRegistryCredential = env.DTIS_TENANT_REGISTRY_CREDENTIAL;
   if (env.DTIS_DEFAULT_TENANT_ID) next.security.defaultTenantId = env.DTIS_DEFAULT_TENANT_ID;
   if (env.DTIS_SERVICE_DID) next.security.serviceDid = env.DTIS_SERVICE_DID;
+  if (env.DTIS_TENANT_PROVISIONING_ENABLED === "true") {
+    next.security.tenantProvisioning = {
+      enabled: true,
+      provisioningKeyCredential: env.DTIS_TENANT_PROVISIONING_KEY_CREDENTIAL ?? "DTIS_TENANT_PROVISIONING_KEY",
+      dynamicTenantFile: env.DTIS_DYNAMIC_TENANT_FILE ?? "/data/tenants.json",
+      publicApiUrl: env.DTIS_PUBLIC_API_URL,
+      topicPrefix: env.DTIS_MQTT_TOPIC_PREFIX,
+      mqtt: env.DTIS_MQTT_PUBLIC_URL ? {
+        passwordFile: env.DTIS_MQTT_PASSWORD_FILE ?? "/mqtt-auth/password_file",
+        aclFile: env.DTIS_MQTT_ACL_FILE ?? "/mqtt-auth/acl_file",
+        serviceUsername: env.MQTT_USERNAME ?? "objectid",
+        publicUrl: env.DTIS_MQTT_PUBLIC_URL,
+      } : undefined,
+    };
+  }
+  if (env.DTIS_MQTT_TOPIC_PREFIX && Array.isArray(next.connectors.mqtt?.mappings)) {
+    const prefix = env.DTIS_MQTT_TOPIC_PREFIX.replace(/^\/+|\/+$/g, "");
+    next.connectors.mqtt.mappings = next.connectors.mqtt.mappings.map((mapping: Record<string, unknown>) => {
+      if (!mapping.dynamicTenantTopic) return mapping;
+      const mode = String(mapping.mode ?? "dataset");
+      return { ...mapping, topic: `${prefix}/+/twins/+/telemetry/${mode}` };
+    });
+    const commandPrefix = prefix.endsWith("/tenants") ? prefix.slice(0, -8) : prefix;
+    next.commands.requestTopicTemplate = `${commandPrefix}/twins/{twinId}/commands/request`;
+    next.commands.resultTopic = `${commandPrefix}/twins/+/commands/+/result`;
+  }
   if (env.DTIS_DATA_DIRECTORY) next.dataset.directory = env.DTIS_DATA_DIRECTORY;
   if (env.DTIS_COMMANDS_ENABLED) next.commands.enabled = env.DTIS_COMMANDS_ENABLED === "true";
   if (env.DTIS_COMMAND_STORE_FILE) next.commands.storeFile = env.DTIS_COMMAND_STORE_FILE;
