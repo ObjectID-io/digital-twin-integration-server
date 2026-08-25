@@ -22,6 +22,9 @@ objectid:
       - url: https://m-gas1.objectid.io
         tokenCredential: DTIS_GAS_STATION_1_TOKEN
         reserveDurationSeconds: 30
+      - url: https://m-gas2.objectid.io
+        tokenCredential: DTIS_GAS_STATION_2_TOKEN
+        reserveDurationSeconds: 30
 
 profiles:
   directory: /profiles

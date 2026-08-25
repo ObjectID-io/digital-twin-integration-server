@@ -25,7 +25,7 @@ services:
       DTIS_OBJECTID_PACKAGE_ID: ${DTIS_OBJECTID_PACKAGE_ID:?set the mainnet oid_twin package ID}
       DTIS_SERVICE_DID: ${DTIS_SERVICE_DID:?set the mainnet Integration Server DID}
       DTIS_GAS_STATION_1_URL: ${DTIS_GAS_STATION_1_URL:-https://m-gas1.objectid.io}
-      DTIS_GAS_STATION_2_URL: ""
+      DTIS_GAS_STATION_2_URL: ${DTIS_GAS_STATION_2_URL:-https://m-gas2.objectid.io}
       DTIS_TENANT_PROVISIONING_ENABLED: "true"
       DTIS_TENANT_PROVISIONING_KEY_CREDENTIAL: DTIS_TENANT_PROVISIONING_KEY
       DTIS_DYNAMIC_TENANT_FILE: /data/mainnet-tenants.json
