@@ -27,7 +27,7 @@ export class CommandService {
     if (!this.config.enabled) throw new AppError("COMMANDS_DISABLED", "Command execution is disabled", 404, "CONNECTOR");
     const exact = this.config.catalogs.find((item) => item.twinId.toLowerCase() === twinId.toLowerCase());
     const fallback = this.config.catalogs.find((item) => item.twinId === "*");
-    return structuredClone(exact ?? fallback ?? { twinId, interfaceId: "urn:objectid:interface:commands:v1", commands: [] });
+    return structuredClone(exact ?? (fallback ? { ...fallback, twinId } : { twinId, interfaceId: "urn:objectid:interface:commands:v1", commands: [] }));
   }
 
   async start() {

@@ -26,6 +26,21 @@ async function fixture() {
   return { directory, writes, service };
 }
 
+async function wildcardFixture() {
+  const directory = await mkdtemp(join(tmpdir(), "objectid-commands-wildcard-"));
+  const service = new CommandService({
+    enabled: true,
+    storeFile: join(directory, "commands.json"),
+    requestTopicTemplate: "objectid/twins/{twinId}/commands/request",
+    resultTopic: "objectid/twins/+/commands/+/result",
+    catalogs: [{
+      twinId: "*", interfaceId: "urn:objectid:interface:simulator-control:v1",
+      commands: [{ name: "pauseSimulation", version: "1.0", riskClass: "operational", timeoutSeconds: 30, parametersSchema: { type: "object" } }],
+    }],
+  });
+  return service;
+}
+
 describe("ObjectID command service", () => {
   it("validates, persists and dispatches an allowlisted command with QoS 1", async () => {
     const { directory, writes, service } = await fixture();
@@ -39,5 +54,15 @@ describe("ObjectID command service", () => {
     const { service } = await fixture();
     await expect(service.create("0xtwin", "did:a", { command: { name: "unknown", parameters: {} } })).rejects.toThrow(/not present/);
     await expect(service.create("0xtwin", "did:a", { command: { name: "setMode", version: "1.0", parameters: { mode: "unsafe" } } })).rejects.toThrow(/do not match/);
+  });
+
+  it("applies the shared simulator catalog to dynamically provisioned Twin IDs", async () => {
+    const service = await wildcardFixture();
+    const twinId = `0x${"1".repeat(64)}`;
+    expect(service.catalog(twinId)).toMatchObject({
+      twinId,
+      interfaceId: "urn:objectid:interface:simulator-control:v1",
+      commands: [{ name: "pauseSimulation" }],
+    });
   });
 });

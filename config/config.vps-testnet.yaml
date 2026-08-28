@@ -86,7 +86,10 @@ commands:
   signingKeyFile: /run/secrets/command_signing_key
   signingKeyId: dtis-command-v1
   catalogs:
-    - twinId: "${credential:MQTT_TWIN_ID}"
+    # Shared simulator profile. Authorization is still evaluated for the
+    # requested Twin and the broker ACL limits delivery to its provisioned
+    # device credential.
+    - twinId: "*"
       interfaceId: urn:objectid:interface:simulator-control:v1
       commands:
         - name: pauseSimulation
