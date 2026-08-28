@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ObjectID Digital Twin Integration Server status">
+  <title>ObjectID · DTIS</title>
+  <link rel="stylesheet" href="console-assets/status.css">
+  <script src="console-assets/status.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="ObjectID DTIS home"><span>OID::</span>ObjectID</a>
+    <nav aria-label="DTIS resources">
+      <a href="docs">API DOCS</a>
+      <a href="openapi.json">OPENAPI</a>
+      <a id="network-link" href="/mainnet/">MAINNET</a>
+      <button id="refresh" type="button">REFRESH</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">DIGITAL TWIN INTEGRATION SERVER</p>
+      <div class="hero-grid">
+        <div>
+          <h1>Integration<br><span>plane status.</span></h1>
+          <p class="intro">Live, read-only visibility into the services connecting Digital Twins, industrial protocols and storage.</p>
+        </div>
+        <div class="overall-card" aria-live="polite">
+          <p class="card-label">CURRENT STATUS</p>
+          <div class="overall-line"><span id="overall-dot" class="status-dot loading"></span><strong id="overall">CHECKING</strong></div>
+          <dl>
+            <div><dt>NETWORK</dt><dd id="network">—</dd></div>
+            <div><dt>API</dt><dd id="api-version">—</dd></div>
+            <div><dt>UPTIME</dt><dd id="uptime">—</dd></div>
+            <div><dt>LAST CHECK</dt><dd id="last-check">—</dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="content-section" aria-labelledby="services-title">
+      <div class="section-heading"><div><p class="eyebrow">DEPENDENCIES</p><h2 id="services-title">Service health</h2></div><p id="service-summary">Loading live checks…</p></div>
+      <div id="services" class="service-grid" aria-live="polite"></div>
+    </section>
+
+    <section class="content-section metrics-section" aria-labelledby="metrics-title">
+      <div class="section-heading"><div><p class="eyebrow">TELEMETRY</p><h2 id="metrics-title">Runtime metrics</h2></div><p>Aggregated counters only. No tenant or payload data is exposed.</p></div>
+      <div id="metrics" class="metric-grid"></div>
+    </section>
+  </main>
+
+  <footer><span>ObjectID Infrastructure</span><span id="auto-refresh">AUTO-REFRESH · 30S</span></footer>
+</body>
+</html>

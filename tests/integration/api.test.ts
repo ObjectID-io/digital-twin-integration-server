@@ -25,8 +25,20 @@ describe("HTTP integration", () => {
 
   it("serves health, readiness and OpenAPI", async () => {
     const app = createApp(testConfig({ dataset: { directory: dataDirectory } }), adapter).app;
+    const consolePage = await request(app).get("/");
+    expect(consolePage.status).toBe(200);
+    expect(consolePage.text).toContain("DIGITAL TWIN INTEGRATION SERVER");
     expect((await request(app).get("/health")).status).toBe(200);
     expect((await request(app).get("/ready")).body.ready).toBe(true);
+    const status = await request(app).get("/status.json");
+    expect(status.status).toBe(200);
+    expect(status.headers["cache-control"]).toBe("no-store");
+    expect(status.body).toMatchObject({ network: "testnet", overall: "operational", ready: true });
+    expect(status.body.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "connector-rest", status: "operational" }),
+      expect.objectContaining({ id: "connector-mqtt", status: "disabled" }),
+      expect.objectContaining({ id: "storage-local", status: "operational" }),
+    ]));
     expect((await request(app).get("/openapi.json")).body.openapi).toBe("3.0.3");
   });
 

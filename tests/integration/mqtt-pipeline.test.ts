@@ -22,22 +22,20 @@ describe("MQTT queue pipelines", () => {
     expect(adapter.calls[0]).toMatchObject({ method: "publishState", twinId: "0xtwin" });
   });
 
-  it("flushes dataset samples, persists exact bytes and registers the hash", async () => {
+  it("flushes dataset samples to off-chain storage without creating an on-chain event", async () => {
     const adapter = new FakeObjectIdAdapter();
     const runtime = createApp(testConfig({ dataset: { directory } }), adapter);
     const mapping = { topic: "factory/motor1/raw", twinId: "0xtwin", mode: "dataset" as const, datasetType: "telemetry", windowSeconds: 60 };
     await runtime.ingestMqttMessage({ mapping, topic: mapping.topic, value: { value: 40 }, observedAt: 100 });
     await runtime.ingestMqttMessage({ mapping, topic: mapping.topic, value: { value: 42 }, observedAt: 200 });
     await runtime.aggregator.flush("0xtwin:factory/motor1/raw");
-    await runtime.worker.processNext();
-    const call = adapter.calls.find((item) => item.method === "addDataset")!;
-    const payload = call.input as any;
-    const bytes = await readFile(new URL(payload.storageUri));
+    const stored = (await runtime.storage.listManagedObjects()).find((item) => item.twinId === "0xtwin" && ["dataset", "datasets"].includes(item.category))!;
+    const bytes = await readFile(new URL(stored.uri));
     const content = JSON.parse(bytes.toString());
     expect(content.samples).toHaveLength(2);
     expect(content).toMatchObject({ twinId: "0xtwin", fromTimestamp: 100, toTimestamp: 200 });
-    expect(payload.sampleCount).toBe(2);
-    expect(payload.payloadHash).toBe(`sha256:${createHash("sha256").update(bytes).digest("hex")}`);
+    expect(createHash("sha256").update(bytes).digest("hex")).toMatch(/^[0-9a-f]{64}$/);
+    expect(adapter.calls.some((item) => item.method === "addDataset")).toBe(false);
   });
 
   it("retries a temporary pre-submission failure and eventually succeeds", async () => {

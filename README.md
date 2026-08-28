@@ -1,5 +1,10 @@
 # ObjectID Digital Twin Stateless Integration Server
 
+The root URL serves a public, read-only operations console with sanitized health
+information for DTIS dependencies, connectors and storage. Its data is available
+as JSON at `GET /status.json`; no tenant configuration, credentials or payloads
+are exposed.
+
 Multi-tenant subscription accounting and trusted Integration Server provisioning are described in
 [`docs/MULTI_TENANT_ACCOUNTING.md`](docs/MULTI_TENANT_ACCOUNTING.md).
 The hosted service runbook is in
@@ -78,8 +83,9 @@ MinIO and one-time bucket initialization; credentials come from `.env`.
 REST supports outbound HTTP with timeout and circuit breaker. MQTT supports
 TLS/authentication, QoS, publish, wildcard subscriptions and configured
 topic-to-Twin mappings. MQTT `state` mappings enqueue `publishState`; `dataset`
-mappings aggregate time windows, persist exact JSON bytes, hash them and enqueue
-`addDataset`. Connector construction is configuration-driven. OPC-UA, Modbus
+mappings aggregate time windows and persist exact JSON bytes off-chain without
+creating an IOTA event. An authorized evidence export later creates one
+`addDataset` mutation from the selected retained windows. Connector construction is configuration-driven. OPC-UA, Modbus
 and WebSocket are plugin-ready but **not implemented**.
 
 ## ObjectID Integration
@@ -102,6 +108,14 @@ actor, revision transitions, continuity, ordering and required payload refs.
 An indexed provider is preferred. When it is unavailable, the server performs
 a bounded ObjectID owner/type read of the Twin's child events, then applies
 stable pagination and filtering with a short memory or Redis cache.
+
+Dataset-mode ingestion persists rolling telemetry windows off-chain without
+creating an event for every window. `POST /api/v1/twins/:id/evidence-bundles`
+creates one on-demand Dataset from the retained windows and anchors it with one
+type-70 Digital Thread event. Its ZIP is downloaded from
+`GET /api/v1/twins/:id/evidence-bundles/:datasetId`; validation compares a
+browser-computed file hash with that specific live `OIDTwinDataset` and event.
+See `docs/EVIDENCE_BUNDLES.md`.
 
 ## Identifier Resolver
 

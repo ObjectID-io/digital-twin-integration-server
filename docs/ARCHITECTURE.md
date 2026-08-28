@@ -42,7 +42,9 @@ retry and otherwise become failed jobs.
 
 Dataset mode buffers samples in an ephemeral time window, serializes one JSON
 dataset, routes it to the configured external provider, hashes the exact stored
-bytes, then queues `addDataset` with URI/hash metadata. Models, inline maturity
+bytes and keeps the operational window off-chain. An authenticated on-demand
+export combines selected retained windows, stores one evidence Dataset and then
+executes a single `addDataset` mutation with URI/hash metadata. Models, inline maturity
 evidence and event payloads use the same category router. Shutdown
 stops subscriptions, attempts window flush, drains/stops the worker, disconnects
 connectors and closes optional Redis.

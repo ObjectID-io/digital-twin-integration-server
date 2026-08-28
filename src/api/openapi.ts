@@ -14,6 +14,7 @@ export const openApiDocument = {
   paths: {
     "/health": { get: { summary: "Liveness", responses: { "200": { description: "Alive" } } } },
     "/ready": { get: { summary: "ObjectID and required dependency readiness", responses: { "200": { description: "Ready" }, "503": { description: "Not ready" } } } },
+    "/status.json": { get: { summary: "Sanitized public DTIS service status and aggregate metrics", responses: { "200": { description: "Public operations status" } } } },
     "/api/v1/twins/{id}": {
       get: { summary: "Get Twin", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Twin" } } },
       patch: { summary: "Update Twin name, description and mutable metadata (owner/steward policy enforced)", responses: { "200": { description: "Updated on-chain" }, "403": { description: "Twin policy denied" } } },
@@ -43,6 +44,9 @@ export const openApiDocument = {
     "/api/v1/twins/{id}/thread": { get: { summary: "Get Digital Thread", responses: { "200": { description: "Events" } } } },
     "/api/v1/twins/{id}/thread/verify": { get: { summary: "Verify Digital Thread", responses: { "200": { description: "Verification" } } } },
     "/api/v1/twins/{id}/thread/verify/report": { get: { summary: "Export Digital Thread audit evidence", responses: { "200": { description: "Evidence report" } } } },
+    "/api/v1/twins/{id}/evidence-bundles": { post: { summary: "Create one on-demand Dataset snapshot and its Digital Thread anchor", responses: { "201": { description: "Created Dataset reference" } } } },
+    "/api/v1/twins/{id}/evidence-bundles/{datasetId}": { get: { summary: "Download the ZIP for one previously created Dataset snapshot", responses: { "200": { description: "ZIP evidence bundle" } } } },
+    "/api/v1/twins/{id}/evidence-bundles/validate": { post: { summary: "Validate a locally hashed snapshot ZIP against its live IOTA Dataset object and Digital Thread event", responses: { "200": { description: "Evidence validation result" } } } },
     "/api/v1/twins/{id}/validate-profile": { post: { summary: "Validate a payload against a versioned ISO-alignment profile", responses: { "200": { description: "Validation result" } } } },
     "/api/v1/profiles/{profileId}/validate": { post: { summary: "Validate a payload without Twin context", responses: { "200": { description: "Validation result" }, "422": { description: "Profile is not validatable" } } } },
     "/api/v1/profiles": { get: { summary: "List versioned profiles", responses: { "200": { description: "Profiles" } } } },

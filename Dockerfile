@@ -12,6 +12,7 @@ WORKDIR /app
 RUN addgroup -S objectid && adduser -S -G objectid objectid && apk add --no-cache mosquitto
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY console ./console
 COPY profiles /profiles
 COPY config/config.example.yaml /config/config.yaml
 RUN mkdir -p /secrets /data && chown -R objectid:objectid /app /config /profiles /secrets /data

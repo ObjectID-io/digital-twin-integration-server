@@ -1,5 +1,6 @@
 import express from "express";
 import { randomBytes } from "node:crypto";
+import { resolve } from "node:path";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import swaggerUi from "swagger-ui-express";
@@ -37,9 +38,11 @@ import { TwinRealtimeHub, type TwinRealtimeEvent } from "../realtime/hub.js";
 import { objectIdTwinPublicAccess } from "../twin/publicVisibility.js";
 import { CommandService } from "../commands/service.js";
 import { StorageRetentionService } from "../storage/retention.js";
+import { TwinEvidenceService } from "../evidence/service.js";
 import {
   policyDenied, queueDepth, registry as metricsRegistry, requestsTotal, requestDuration, threadFailures,
 } from "../health/metrics.js";
+import { buildSystemStatus, type ReadinessSnapshot } from "../health/status.js";
 
 export interface AppRuntime {
   app: express.Express;
@@ -64,6 +67,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   if (config.server.trustProxy) app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use(helmet());
+  app.use("/api/v1/twins/:id/evidence-bundles/validate", express.json({ limit: "4mb" }));
   app.use(express.json({ limit: config.server.bodyLimitBytes }));
   app.use(rateLimit({ windowMs: 60_000, limit: config.security.rateLimitPerMinute, standardHeaders: true, legacyHeaders: false }));
   app.use((request, response, next) => {
@@ -99,34 +103,58 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const aggregator = new DatasetWindowAggregator(
     config.dataset.aggregation.defaultWindowSeconds * 1_000,
     storage,
-    async (_key, dataset) => {
-      const twinId = String(dataset.twinId);
-      const idempotencyKey = `dataset:${twinId}:${String(dataset.payloadHash)}`;
-      const accounting = await connectorAccounting(String(dataset.tenantId ?? ""));
-      await worker.enqueue(worker.createJob("ADD_DATASET", twinId, dataset, idempotencyKey, accounting));
-    },
+    async () => { /* Operational windows remain off-chain until an authenticated export creates one Dataset snapshot. */ },
   );
   const auth = createAuthProvider(config, credentials, tenants);
   const realtime = new TwinRealtimeHub();
   const commands = new CommandService(config.commands, connectors.get("mqtt"));
   const retention = new StorageRetentionService(config.retention, storage, objectid);
+  const evidence = new TwinEvidenceService(objectid, storage, config);
   const publicAccessCache = new Map<string, { checkedAt: number; twinPublic: boolean; dataPublic: boolean }>();
+  const consoleDirectory = resolve(process.cwd(), "console");
+
+  async function inspectReadiness(): Promise<ReadinessSnapshot> {
+    const [objectIdReady, profilesReady, connectorHealth, storageHealth] = await Promise.all([
+      objectid.isReady(), profiles.isReady(), connectors.health(), storage.health(),
+    ]);
+    const requiredConnectorsReady = Object.entries(config.connectors).every(([type, connectorConfig]) =>
+      !connectorConfig.enabled || connectorConfig.required !== true || connectorHealth[type]?.healthy === true);
+    const ready = objectIdReady && profilesReady && requiredConnectorsReady && storageHealth.requiredReady;
+    return {
+      ready,
+      dependencies: { objectid: objectIdReady, profiles: profilesReady, requiredConnectors: requiredConnectorsReady, storage: storageHealth.requiredReady },
+      connectors: connectorHealth,
+      storage: storageHealth,
+    };
+  }
+
+  app.use("/console-assets", express.static(consoleDirectory, { index: false, immutable: true, maxAge: "1h" }));
+  app.get(["/", "/status"], (_request, response, next) => {
+    response.sendFile(resolve(consoleDirectory, "index.html"), (error) => { if (error) next(error); });
+  });
 
   app.get("/health", (_request, response) => response.json({ status: "ok", stateless: true, timestamp: new Date().toISOString() }));
   app.get("/ready", async (_request, response, next) => {
     try {
-      const [objectIdReady, profilesReady, connectorHealth, storageHealth] = await Promise.all([
-        objectid.isReady(), profiles.isReady(), connectors.health(), storage.health(),
-      ]);
-      const requiredConnectorsReady = Object.entries(config.connectors).every(([type, connectorConfig]) =>
-        !connectorConfig.enabled || connectorConfig.required !== true || connectorHealth[type]?.healthy === true);
-      const ready = objectIdReady && profilesReady && requiredConnectorsReady && storageHealth.requiredReady;
-      response.status(ready ? 200 : 503).json({
-        ready,
-        dependencies: { objectid: objectIdReady, profiles: profilesReady, requiredConnectors: requiredConnectorsReady, storage: storageHealth.requiredReady },
-        connectors: connectorHealth,
-        storage: storageHealth.providers,
+      const snapshot = await inspectReadiness();
+      response.status(snapshot.ready ? 200 : 503).json({
+        ready: snapshot.ready,
+        dependencies: snapshot.dependencies,
+        connectors: snapshot.connectors,
+        storage: snapshot.storage.providers,
       });
+    } catch (error) { next(error); }
+  });
+  app.get("/status.json", async (_request, response, next) => {
+    try {
+      queueDepth.set(queue.size());
+      response.set("Cache-Control", "no-store").json(buildSystemStatus({
+        config,
+        readiness: await inspectReadiness(),
+        metricsText: await metricsRegistry.metrics(),
+        queueDepth: queue.size(),
+        retention: retention.status(),
+      }));
     } catch (error) { next(error); }
   });
   app.get("/metrics", async (_request, response) => {
@@ -427,6 +455,31 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   api.get("/twins/:id/thread/verify/report", async (request, response, next) => {
     try { response.json(await threads.createEvidenceReport(request.params.id!, threadOptions(request.query))); } catch (error) { next(error); }
   });
+  api.post("/twins/:id/evidence-bundles", async (request, response, next) => {
+    try {
+      const twinId = request.params.id!;
+      await authorize(request, twinId, TwinAction.AddDataset);
+      response.status(201).set("Cache-Control", "no-store").json(await evidence.createSnapshot(
+        twinId, evidenceSelection(request.body ?? {}), request.auth?.accounting,
+      ));
+    } catch (error) { next(error); }
+  });
+  api.get("/twins/:id/evidence-bundles/:datasetId", async (request, response, next) => {
+    try {
+      const twinId = request.params.id!;
+      const bundle = await evidence.createBundle(twinId, requiredProvisioningTwinId(request.params.datasetId));
+      response.set({
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="objectid-dataset-${request.params.datasetId!.slice(0, 10)}.zip"`,
+        "Content-Length": String(bundle.bytes.length),
+        "Cache-Control": "no-store",
+      }).send(bundle.bytes);
+    } catch (error) { next(error); }
+  });
+  api.post("/twins/:id/evidence-bundles/validate", async (request, response, next) => {
+    try { response.set("Cache-Control", "no-store").json(await evidence.validateBundle(request.params.id!, request.body)); }
+    catch (error) { next(error); }
+  });
   api.get("/indexer/checkpoint", async (_request, response, next) => { try { response.json(await indexer.getCheckpoint?.() ?? null); } catch (error) { next(error); } });
   api.get("/twins/:id/identifiers", async (request, response, next) => { try { response.json(await resolver.getTwinIdentifiers(request.params.id!)); } catch (error) { next(error); } });
   api.get("/resolve/:scheme/:value", async (request, response, next) => {
@@ -668,6 +721,21 @@ function threadOptions(query: Record<string, unknown>): PaginationOptions {
     eventTypes: typeof query.eventType === "string" ? query.eventType.split(",").map(Number).filter(Number.isFinite) : undefined,
     fromTimestamp: number(query.fromTimestamp ?? query.fromTime), toTimestamp: number(query.toTimestamp ?? query.toTime),
   };
+}
+
+function evidenceSelection(query: Record<string, unknown>) {
+  const timestamp = (value: unknown, name: string) => {
+    if (value === undefined) return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) throw new AppError("EVIDENCE_TIME_INVALID", `${name} must be a Unix timestamp in milliseconds`, 422, "VALIDATION");
+    return parsed;
+  };
+  const fromTimestamp = timestamp(query.fromTimestamp ?? query.fromTime, "fromTimestamp");
+  const toTimestamp = timestamp(query.toTimestamp ?? query.toTime, "toTimestamp");
+  if (fromTimestamp !== undefined && toTimestamp !== undefined && fromTimestamp > toTimestamp) {
+    throw new AppError("EVIDENCE_RANGE_INVALID", "fromTimestamp must not be later than toTimestamp", 422, "VALIDATION");
+  }
+  return { fromTimestamp, toTimestamp };
 }
 
 function callerDid(request: express.Request, config: AppConfig) {
