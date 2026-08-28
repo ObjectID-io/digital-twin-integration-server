@@ -35,7 +35,7 @@ async function buildSimulatorConfig(integration, env, read) {
     topic: pick(env.SIM_MQTT_TOPIC_OVERRIDE, topicSet?.dataset, env.MQTT_TOPIC, tenantRoot ? `${tenantRoot}/telemetry/dataset` : "objectid/twins/telemetry/dataset"),
     stateTopic: pick(env.SIM_STATE_TOPIC_OVERRIDE, topicSet?.state, env.SIM_STATE_TOPIC, tenantRoot ? `${tenantRoot}/telemetry/state` : "objectid/twins/telemetry/state"),
     qos: integer(env, "MQTT_QOS", 1, 0, 2),
-    intervalMs: integer(env, "SIM_INTERVAL_MS", 5000, 1000, 86_400_000),
+    intervalMs: integer(env, "SIM_INTERVAL_MS", 15000, 1000, 86_400_000),
     assetId: requestedTwinId,
     network,
     tenantId: tenantId || null,

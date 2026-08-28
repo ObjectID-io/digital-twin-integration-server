@@ -76,7 +76,7 @@ Both published ports bind to loopback by default; Traefik reaches the API over t
 
 ## Digital Twin simulator
 
-The optional `mqtt-digital-twin-simulator` publishes industrial telemetry every five seconds to the tenant dataset topic. The integration server aggregates these samples into five-minute windows before storing and registering each dataset, limiting monthly subscription-credit consumption. Start it safely before onboarding; it remains paused with `twinId=unknown` until valid credentials are installed:
+The optional `mqtt-digital-twin-simulator` publishes industrial telemetry every fifteen seconds to the tenant dataset topic. The integration server aggregates these samples into five-minute windows before storing and registering each dataset, limiting monthly subscription-credit consumption. Start it safely before onboarding; it remains paused with `twinId=unknown` until valid credentials are installed:
 
 ```bash
 docker compose --profile simulator up -d --build mqtt-digital-twin-simulator

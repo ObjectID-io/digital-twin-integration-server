@@ -2,7 +2,7 @@
 
 Simulates an industrial machine and publishes JSON telemetry to the MQTT broker used by the ObjectID Digital Twin Integration Server.
 
-With dedicated Twin credentials, the dataset topic is read exactly from the downloaded ACL configuration. `objectid/twins/telemetry/dataset` is only the legacy service-account fallback. Samples are emitted every five seconds and aggregated by the integration server into five-minute datasets. This avoids invoking the on-chain state operation, and therefore consuming a subscription operation credit, for every simulated sample.
+With dedicated Twin credentials, the dataset topic is read exactly from the downloaded ACL configuration. `objectid/twins/telemetry/dataset` is only the legacy service-account fallback. Samples are emitted every fifteen seconds and aggregated by the integration server into five-minute datasets. This avoids invoking the on-chain state operation, and therefore consuming a subscription operation credit, for every simulated sample.
 
 ## Configuration
 
@@ -42,7 +42,7 @@ Before the first valid upload, the container may connect with the legacy broker 
 | `OBJECTID_SIMULATOR_CONFIG_DIR` | `/data/twins` | Persistent directory containing one protected configuration file per simulated Twin. |
 | `SIM_TWIN_ID` | first Twin in configuration | Selects a Twin when the downloaded configuration contains several. |
 | `MQTT_TOPIC` | `objectid/twins/telemetry/dataset` | Destination topic. |
-| `SIM_INTERVAL_MS` | `5000` | Sample interval, minimum 1000 ms. |
+| `SIM_INTERVAL_MS` | `15000` | Sample interval, minimum 1000 ms. |
 | `SIM_ASSET_ID` | `unknown` | Object ID included in each sample. |
 | `SIM_MACHINE_NAME` | `mqtt-digital-twin` | Simulated machine name. |
 | `SIM_STATE_TOPIC` | `objectid/twins/telemetry/state` | Topic used once per fault transition to create an on-chain State Published event. |

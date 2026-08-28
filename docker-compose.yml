@@ -186,7 +186,7 @@ services:
       MQTT_TOPIC: ${SIM_MQTT_TOPIC:-objectid/twins/telemetry/dataset}
       SIM_STATE_TOPIC: objectid/twins/telemetry/state
       MQTT_QOS: "1"
-      SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-5000}
+      SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-15000}
       SIM_ASSET_ID: ${SIM_ASSET_ID:-unknown}
       SIM_MACHINE_NAME: ${SIM_MACHINE_NAME:-mqtt-vps-twin}
       SIM_COMMAND_INTERFACE_ID: urn:objectid:interface:simulator-control:v1

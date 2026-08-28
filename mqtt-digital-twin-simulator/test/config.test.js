@@ -51,6 +51,7 @@ test("loads dedicated tenant credentials and topics from the downloaded configur
   assert.equal(config.stateTopic, integration.mqtt.topics[0].state);
   assert.equal(config.commandTopic, integration.mqtt.topics[0].commandRequests);
   assert.equal(config.credentialSource, "integration-file");
+  assert.equal(config.intervalMs, 15000);
 });
 
 test("loads a Twin-scoped device configuration", async () => {
