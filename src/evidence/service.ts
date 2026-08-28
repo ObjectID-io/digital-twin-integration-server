@@ -122,11 +122,73 @@ export class TwinEvidenceService {
       fileSizeMatches: Number(file.byteLength) === entry.byteLength,
     };
     const valid = Object.values(contextChecks).every(Boolean) && Object.values(checks).every(Boolean);
+    const validatedAt = new Date().toISOString();
+    const assessmentChecks = buildAssessmentChecks({
+      twinId, manifest, file, dataset, event, expected, contextChecks, checks,
+      network: this.config.objectid.network, packageId: String(this.config.objectid.packageId ?? ""),
+    });
+    const passedChecks = assessmentChecks.filter((check) => check.passed).length;
     return {
-      format: "objectid.digital-twin-evidence-validation.v2", validatedAt: new Date().toISOString(),
+      format: "objectid.digital-twin-evidence-validation.v2", validatedAt,
       twinId, network: this.config.objectid.network, snapshotDatasetId: manifest.snapshotDatasetId, valid,
       contextChecks, checks,
       statement: valid ? "The exported Dataset matches its live OIDTwinDataset and Digital Thread anchor on IOTA." : "One or more Dataset evidence checks failed.",
+      assessment: {
+        format: "objectid.digital-twin-technical-conformity-report.v1",
+        reportId: `oid-evidence-${manifest.snapshotDatasetId}-${validatedAt}`,
+        title: "ObjectID Digital Twin evidence technical conformity report",
+        verdict: valid ? "CONFORMANT" : "NON_CONFORMANT",
+        assuranceLevel: valid ? "CRYPTOGRAPHICALLY_VERIFIED" : "CHECKS_FAILED",
+        generatedAt: validatedAt,
+        scope: {
+          subject: "One on-demand ObjectID Digital Twin Dataset evidence bundle",
+          twinId,
+          snapshotDatasetId: manifest.snapshotDatasetId,
+          network: this.config.objectid.network,
+          packageId: String(this.config.objectid.packageId ?? ""),
+          validationMethod: "Browser-side SHA-256 of the uncompressed Dataset plus live OIDTwinDataset and Digital Thread lookup",
+        },
+        standardsAlignment: [
+          { reference: "ISO/IEC 30188:2026", area: "Digital Twin reference architecture", claim: "Technical evidence is separated into identity, data, lifecycle and verification concerns." },
+          { reference: "ISO 23247-4:2021", area: "Information exchange", claim: "The report identifies the Dataset, exchange context, payload digest and storage reference used by the implementation." },
+          { reference: "ISO 23247-5:2026", area: "Digital Thread", claim: "The Dataset anchor is correlated with a revisioned type-70 Digital Thread event." },
+          { reference: "SHA-256", area: "Payload integrity", claim: "The exact uncompressed Dataset bytes are compared with both manifest and on-chain hash evidence." },
+        ],
+        coverage: { total: assessmentChecks.length, passed: passedChecks, failed: assessmentChecks.length - passedChecks },
+        checks: assessmentChecks,
+        evidence: {
+          archive: {
+            bundleFormat: manifest.format, generatedAt: manifest.generatedAt,
+            datasetPath: entry.path, byteLength: Number(file.byteLength), sha256: normalizeHash(String(file.sha256 ?? "")),
+          },
+          manifest: {
+            datasetType: entry.datasetType, payloadHash: expected, byteLength: entry.byteLength,
+            periodFrom: entry.periodFrom, periodTo: entry.periodTo, storageUri: entry.storageUri,
+          },
+          onChainDataset: dataset ? {
+            objectId: dataset.objectId, datasetType: dataset.datasetType, payloadHash: normalizeHash(dataset.payloadHash),
+            storageUri: dataset.storageUri, periodFrom: dataset.periodFrom, periodTo: dataset.periodTo, createdAt: dataset.createdAt,
+          } : null,
+          digitalThreadEvent: event ? {
+            eventId: event.eventId, eventType: event.eventType, revisionBefore: event.revisionBefore,
+            revisionAfter: event.revisionAfter, actorDid: event.actorDid, payloadRef: event.payloadRef,
+            payloadHash: normalizeHash(event.payloadHash), createdAt: event.createdAt,
+            transactionDigest: event.transactionDigest ?? null,
+          } : null,
+        },
+        conclusions: valid ? [
+          "The archive belongs to the selected Digital Twin and configured IOTA deployment.",
+          "The Dataset file is byte-for-byte consistent with the manifest SHA-256 and declared size.",
+          "The manifest is consistent with the live OIDTwinDataset object.",
+          "The OIDTwinDataset is linked to a matching revisioned Digital Thread event.",
+        ] : assessmentChecks.filter((check) => !check.passed).map((check) => `Failed: ${check.title}.`),
+        limitations: [
+          "This is an automated technical self-assessment of the implemented evidence profile, not an ISO certification or a clause-by-clause conformity audit.",
+          "Integrity verification proves consistency of the exported bytes and on-chain references; it does not prove that the originating sensor measurement was physically accurate.",
+          "The assessment does not attest custody before ingestion, operator intent, equipment safety or regulatory suitability for a particular use.",
+          "Revalidation requires access to the configured IOTA network and continued availability of the referenced on-chain objects.",
+        ],
+      },
     };
   }
 
@@ -156,6 +218,36 @@ export class TwinEvidenceService {
     throw new AppError("EVIDENCE_EVENT_NOT_INDEXED", "The Dataset exists but its Digital Thread event is not indexed yet; retry the download", 503, "OBJECTID");
   }
 }
+
+function buildAssessmentChecks(input: {
+  twinId: string; manifest: EvidenceManifest; file: Record<string, any>;
+  dataset: ReturnType<typeof datasetOf> | undefined; event: TwinEvent | undefined; expected: string;
+  contextChecks: Record<string, boolean>; checks: Record<string, boolean>; network: string; packageId: string;
+}) {
+  const { twinId, manifest, file, dataset, event, expected, contextChecks, checks, network, packageId } = input;
+  const entry = manifest.dataset;
+  const check = (id: string, category: string, title: string, passed: boolean | undefined, expectedValue: unknown, observedValue: unknown, evidenceSource: string) => ({
+    id, category, title, passed: Boolean(passed), expected: reportValue(expectedValue), observed: reportValue(observedValue), evidenceSource,
+  });
+  return [
+    check("CTX-01", "CONTEXT", "Supported bundle format", contextChecks.format, BUNDLE_FORMAT, manifest.format, "manifest.json"),
+    check("CTX-02", "CONTEXT", "Selected Digital Twin identity", contextChecks.twinId, twinId, manifest.twinId, "request context + manifest.json"),
+    check("CTX-03", "CONTEXT", "IOTA network binding", contextChecks.network, network, manifest.network, "server configuration + manifest.json"),
+    check("CTX-04", "CONTEXT", "Move package binding", contextChecks.packageId, packageId, manifest.packageId, "server configuration + manifest.json"),
+    check("CTX-05", "CONTEXT", "Snapshot Dataset identity", contextChecks.snapshotDatasetId, manifest.snapshotDatasetId, entry.datasetObjectId, "manifest.json"),
+    check("CHAIN-01", "ON_CHAIN", "OIDTwinDataset exists on IOTA", checks.datasetOnChain, manifest.snapshotDatasetId, dataset?.objectId ?? "not found", "live IOTA object lookup"),
+    check("CHAIN-02", "ON_CHAIN", "Digital Thread anchor exists", checks.eventOnChain, `event type ${DATASET_EVENT} referencing ${manifest.snapshotDatasetId}`, event ? `${event.eventId} / type ${event.eventType}` : "not found", "live Digital Thread lookup"),
+    check("CHAIN-03", "ON_CHAIN", "Dataset payload hash matches manifest", checks.manifestMatchesDataset, expected, dataset ? normalizeHash(dataset.payloadHash) : "unavailable", "OIDTwinDataset + manifest.json"),
+    check("CHAIN-04", "ON_CHAIN", "Dataset metadata matches manifest", checks.manifestMetadataMatches, `${entry.storageUri} / ${entry.periodFrom}-${entry.periodTo}`, dataset ? `${dataset.storageUri} / ${dataset.periodFrom}-${dataset.periodTo}` : "unavailable", "OIDTwinDataset + manifest.json"),
+    check("THREAD-01", "DIGITAL_THREAD", "Event hash matches Dataset hash", checks.eventMatchesDataset, dataset ? normalizeHash(dataset.payloadHash) : expected, event ? normalizeHash(event.payloadHash) : "unavailable", "OIDTwinDataset + OIDTwinEvent"),
+    check("FILE-01", "ARCHIVE", "Dataset file is present", checks.filePresent, entry.path, file.path || "missing", "selected ZIP archive"),
+    check("FILE-02", "ARCHIVE", "Dataset file path matches manifest", checks.filePathMatches, entry.path, file.path || "missing", "selected ZIP archive + manifest.json"),
+    check("FILE-03", "INTEGRITY", "Dataset SHA-256 matches manifest", checks.fileMatchesManifest, expected, normalizeHash(String(file.sha256 ?? "")) || "unavailable", "browser Web Crypto + manifest.json"),
+    check("FILE-04", "INTEGRITY", "Dataset byte length matches manifest", checks.fileSizeMatches, entry.byteLength, file.byteLength, "browser ZIP extraction + manifest.json"),
+  ];
+}
+
+function reportValue(value: unknown) { return value === null || value === undefined || value === "" ? "unavailable" : String(value); }
 
 function fieldsOf(value: any) { return value?.data?.content?.fields ?? value?.content?.fields ?? value?.fields ?? {}; }
 function objectIdOf(value: any) { return String(value?.data?.objectId ?? value?.objectId ?? value?.id ?? ""); }

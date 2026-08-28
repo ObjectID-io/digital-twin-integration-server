@@ -56,6 +56,19 @@ describe("TwinEvidenceService", () => {
     expect(Buffer.from(files[path]!)).toEqual(getEvidenceBytes());
     const valid = await service.validateBundle(twinId, { manifest, file: { path, sha256: getEvidenceHash(), byteLength: getEvidenceBytes().length } });
     expect(valid.valid).toBe(true);
+    expect(valid.assessment).toMatchObject({
+      format: "objectid.digital-twin-technical-conformity-report.v1",
+      verdict: "CONFORMANT",
+      assuranceLevel: "CRYPTOGRAPHICALLY_VERIFIED",
+      coverage: { total: 14, passed: 14, failed: 0 },
+      scope: { twinId, snapshotDatasetId: datasetId, network: "testnet", packageId },
+    });
+    expect(valid.assessment.checks).toHaveLength(14);
+    expect(valid.assessment.evidence).toMatchObject({
+      onChainDataset: { objectId: datasetId },
+      digitalThreadEvent: { eventId, transactionDigest: "transaction-digest" },
+    });
+    expect(valid.assessment.limitations.join(" ")).toContain("not an ISO certification");
   });
 
   it("rejects a changed Dataset file", async () => {
@@ -65,5 +78,7 @@ describe("TwinEvidenceService", () => {
     const changed = await service.validateBundle(twinId, { manifest, file: { path: manifest.dataset.path, sha256: "00".repeat(32), byteLength: getEvidenceBytes().length } });
     expect(changed.valid).toBe(false);
     expect(changed.checks.fileMatchesManifest).toBe(false);
+    expect(changed.assessment).toMatchObject({ verdict: "NON_CONFORMANT", coverage: { total: 14, passed: 13, failed: 1 } });
+    expect(changed.assessment.checks.find((check) => check.id === "FILE-03")).toMatchObject({ passed: false });
   });
 });
