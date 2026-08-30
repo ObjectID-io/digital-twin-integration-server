@@ -15,7 +15,10 @@ export function objectIdTwinPublicAccess(value: unknown, packageId: string) {
   const objectIdMetadata = asRecord(metadata.objectid);
   const twinPublic = objectIdMetadata.visibility === "public" || metadata.visibility === "public";
   const dataPublic = twinPublic && (objectIdMetadata.dataVisibility === "public" || metadata.dataVisibility === "public");
-  const liveLocationPublic = twinPublic && (objectIdMetadata.liveLocationVisibility === "public" || metadata.liveLocationVisibility === "public");
+  const liveLocationPolicy = objectIdMetadata.liveLocationVisibility ?? metadata.liveLocationVisibility;
+  // Legacy public-data Twins already expose position inside realtime/latest.
+  // Preserve that access until the owner writes an explicit location policy.
+  const liveLocationPublic = twinPublic && (liveLocationPolicy === "public" || (liveLocationPolicy == null && dataPublic));
   return { twinPublic, dataPublic, liveLocationPublic };
 }
 
