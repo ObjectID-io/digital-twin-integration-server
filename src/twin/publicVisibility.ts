@@ -7,7 +7,7 @@ export function objectIdTwinPublicAccess(value: unknown, packageId: string) {
   const data = asRecord(object.data);
   const type = stringValue(data.type ?? object.type);
   const expectedType = `${packageId}::oid_twin::OIDTwin`.toLowerCase();
-  if (!type || type.toLowerCase() !== expectedType) return { twinPublic: false, dataPublic: false };
+  if (!type || type.toLowerCase() !== expectedType) return { twinPublic: false, dataPublic: false, liveLocationPublic: false };
 
   const content = asRecord(data.content ?? object.content);
   const fields = asRecord(content.fields ?? object.fields);
@@ -15,7 +15,8 @@ export function objectIdTwinPublicAccess(value: unknown, packageId: string) {
   const objectIdMetadata = asRecord(metadata.objectid);
   const twinPublic = objectIdMetadata.visibility === "public" || metadata.visibility === "public";
   const dataPublic = twinPublic && (objectIdMetadata.dataVisibility === "public" || metadata.dataVisibility === "public");
-  return { twinPublic, dataPublic };
+  const liveLocationPublic = twinPublic && (objectIdMetadata.liveLocationVisibility === "public" || metadata.liveLocationVisibility === "public");
+  return { twinPublic, dataPublic, liveLocationPublic };
 }
 
 function parseMetadata(value: unknown): Record<string, unknown> {

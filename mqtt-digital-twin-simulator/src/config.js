@@ -46,6 +46,15 @@ async function buildSimulatorConfig(integration, env, read) {
     healthPort: integer(env, "HEALTH_PORT", 8081, 1, 65535),
     credentialSource: integration ? "integration-file" : "environment",
   };
+  const mobile = integration?.simulation?.mobile ?? {};
+  config.mobile = {
+    enabled: booleanValue(env.SIM_MOBILE_ENABLED, mobile.enabled, false),
+    centerLatitude: decimal(env.SIM_MOBILE_CENTER_LATITUDE, mobile.centerLatitude, 45.4642, -90, 90, "SIM_MOBILE_CENTER_LATITUDE"),
+    centerLongitude: decimal(env.SIM_MOBILE_CENTER_LONGITUDE, mobile.centerLongitude, 9.19, -180, 180, "SIM_MOBILE_CENTER_LONGITUDE"),
+    radiusKm: decimal(env.SIM_MOBILE_RADIUS_KM, mobile.radiusKm, 4, 0.01, 10000, "SIM_MOBILE_RADIUS_KM"),
+    speedKph: decimal(env.SIM_MOBILE_SPEED_KPH, mobile.speedKph, 42, 0, 1000, "SIM_MOBILE_SPEED_KPH"),
+    intervalMs: config.intervalMs,
+  };
   config.commandTopic = pick(env.SIM_COMMAND_TOPIC_OVERRIDE, topicSet?.commandRequests, env.SIM_COMMAND_TOPIC, `${topicPrefix}/twins/${config.assetId}/commands/request`);
   config.commandResultsTopic = pick(topicSet?.commandResults, `${topicPrefix}/twins/${config.assetId}/commands/+/result`);
   validate(config, Boolean(integration));
@@ -107,4 +116,15 @@ function integer(env, name, fallback, minimum, maximum) {
   const value = Number(env[name] ?? fallback);
   if (!Number.isInteger(value) || value < minimum || value > maximum) throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
   return value;
+}
+
+function decimal(primary, secondary, fallback, minimum, maximum, name) {
+  const value = Number(primary ?? secondary ?? fallback);
+  if (!Number.isFinite(value) || value < minimum || value > maximum) throw new Error(`${name} must be between ${minimum} and ${maximum}`);
+  return value;
+}
+
+function booleanValue(primary, secondary, fallback) {
+  const value = primary ?? secondary ?? fallback;
+  return value === true || String(value).toLowerCase() === "true" || String(value) === "1";
 }

@@ -124,6 +124,26 @@ describe("HTTP integration", () => {
     expect(response.text).not.toContain("secret-tenant");
   });
 
+  it("exposes only normalized position when public live-location access is enabled", async () => {
+    const twinId = `0x${"5".repeat(64)}`;
+    adapter.twins.set(twinId, {
+      data: {
+        type: "0xpackage::oid_twin::OIDTwin",
+        content: { fields: { mutable_metadata: JSON.stringify({ objectid: { visibility: "public", liveLocationVisibility: "public" } }) } },
+      },
+    });
+    const runtime = createApp(testConfig(), adapter);
+    runtime.realtime.publish({
+      mapping: { topic: "secret/fleet", twinId, mode: "dataset", datasetType: "telemetry" },
+      topic: "secret/fleet", value: { secret: "hidden", position: { coordinates: [9.19, 45.46], heading: 90 } }, observedAt: 789,
+    });
+    const response = await request(runtime.app).get(`/api/v1/public/twins/${twinId}/location/latest`);
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ twinId, position: { coordinates: [9.19, 45.46], headingDegrees: 90 } });
+    expect(response.text).not.toContain("secret/fleet");
+    expect(response.text).not.toContain("hidden");
+  });
+
   it("keeps operational data private by default for a public Twin", async () => {
     const twinId = `0x${"4".repeat(64)}`;
     adapter.twins.set(twinId, {

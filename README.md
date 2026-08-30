@@ -158,6 +158,26 @@ Public Webviews can inspect `GET /api/v1/public/twins/:id/realtime/status` witho
 
 Operational payloads remain private by default. When the owner or steward also sets `objectid.dataVisibility` to `public`, anonymous clients may read `/api/v1/public/twins/:id/realtime/latest` and `/stream`. These responses omit connector addresses and tenant details. Setting either Twin visibility or data visibility back to `private` revokes new access and closes active public streams after the policy refresh interval.
 
+Moving assets may include a GeoJSON-compatible `position` object in ordinary MQTT telemetry. Coordinates use `OGC:CRS84` order (`[longitude, latitude, optionalAltitude]`); DTIS validates coordinate ranges and normalizes optional speed values to km/h. Authenticated clients read only the latest normalized coordinate at `GET /api/v1/twins/:id/location/latest`. The anonymous equivalent, `GET /api/v1/public/twins/:id/location/latest`, is enabled only when the Twin is public and `objectid.liveLocationVisibility` is explicitly `public`. It returns no measurements, MQTT topics or tenant information, and is independent from `objectid.dataVisibility`.
+
+```json
+{
+  "schema": "objectid.telemetry.mobile-asset.v1",
+  "assetId": "0xYOUR_TWIN_OBJECT_ID",
+  "observedAt": "2026-08-30T12:00:05.000Z",
+  "position": {
+    "type": "Point",
+    "coordinates": [9.19, 45.4642, 122.4],
+    "crs": "OGC:CRS84",
+    "accuracyMeters": 4.2,
+    "speed": { "value": 42, "unit": "km/h" },
+    "headingDegrees": 87
+  }
+}
+```
+
+Positions remain off-chain during movement. Dataset-mode retention includes them with the rest of the operational samples; an IOTA Dataset and Digital Thread event are created only when an authorized user requests an evidence export. This separates fleet-scale telemetry from independently verifiable snapshot evidence.
+
 Connector state publications never place the MQTT/OPC-UA payload or tenant topic in the on-chain `OIDTwinState`. The chain record contains a SHA-256 hash and a sanitized connector URI; the complete value remains in DTIS realtime memory and configured off-chain dataset storage. This applies to newly ingested states; payloads embedded by earlier software versions remain part of immutable chain history.
 
 The user interface is a separate project: `sdellava/digital-twin-webview`. This repository contains only the integration service, industrial connectors, simulator and supporting infrastructure.
@@ -203,6 +223,8 @@ Tenant-facing Twin operations include:
 - `PATCH /api/v1/twins/:id` — update name, description and mutable metadata;
 - `DELETE /api/v1/twins/:id` — delete with exact-ID confirmation;
 - `GET /api/v1/twins/:id/realtime/{status,latest,stream}` — inspect realtime;
+- `GET /api/v1/twins/:id/location/latest` — read normalized latest position;
+- `GET /api/v1/public/twins/:id/location/latest` — read a location-only public response when explicitly enabled;
 - state, dataset, model, interface, event, maturity and command routes documented
   by `/openapi.json`.
 

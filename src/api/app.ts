@@ -110,7 +110,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const commands = new CommandService(config.commands, connectors.get("mqtt"));
   const retention = new StorageRetentionService(config.retention, storage, objectid);
   const evidence = new TwinEvidenceService(objectid, storage, config);
-  const publicAccessCache = new Map<string, { checkedAt: number; twinPublic: boolean; dataPublic: boolean }>();
+  const publicAccessCache = new Map<string, { checkedAt: number; twinPublic: boolean; dataPublic: boolean; liveLocationPublic: boolean }>();
   const consoleDirectory = resolve(process.cwd(), "console");
 
   async function inspectReadiness(): Promise<ReadinessSnapshot> {
@@ -189,6 +189,15 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       const latest = realtime.latest(twinId);
       if (!latest) throw new AppError("REALTIME_DATA_UNAVAILABLE", "No public realtime data is available for this Twin", 404, "CONNECTOR");
       response.set("Cache-Control", "no-store").json(publicRealtimeEvent(latest));
+    } catch (error) { next(error); }
+  });
+
+  app.get("/api/v1/public/twins/:id/location/latest", async (request, response, next) => {
+    try {
+      const twinId = await assertPublicTwinAccess(request.params.id, "location");
+      const latest = realtime.latest(twinId);
+      if (!latest?.position) throw new AppError("REALTIME_POSITION_UNAVAILABLE", "No public live position is available for this Twin", 404, "CONNECTOR");
+      response.set("Cache-Control", "no-store").json(publicPositionEvent(latest));
     } catch (error) { next(error); }
   });
 
@@ -359,6 +368,11 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     const latest = realtime.latest(request.params.id!);
     if (!latest) return response.status(404).json({ error: { code: "REALTIME_DATA_UNAVAILABLE", message: "No realtime data is available for this Twin", category: "CONNECTOR" } });
     return response.set("Cache-Control", "no-store").json(latest);
+  });
+  api.get("/twins/:id/location/latest", (request, response) => {
+    const latest = realtime.latest(request.params.id!);
+    if (!latest?.position) return response.status(404).json({ error: { code: "REALTIME_POSITION_UNAVAILABLE", message: "No live position is available for this Twin", category: "CONNECTOR" } });
+    return response.set("Cache-Control", "no-store").json(publicPositionEvent(latest));
   });
   api.get("/twins/:id/realtime/stream", (request, response) => {
     const twinId = request.params.id!;
@@ -568,7 +582,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
     return new AppError("PUBLIC_TWIN_NOT_FOUND", "Public Twin not found", 404, "VALIDATION");
   }
 
-  async function assertPublicTwinAccess(rawTwinId: unknown, operationalData: boolean) {
+  async function assertPublicTwinAccess(rawTwinId: unknown, accessKind: boolean | "location") {
     const twinId = String(rawTwinId ?? "").toLowerCase();
     if (!/^0x[0-9a-f]{64}$/i.test(twinId)) throw publicTwinNotFound();
     const cached = publicAccessCache.get(twinId);
@@ -578,7 +592,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
       access = { checkedAt: Date.now(), ...objectIdTwinPublicAccess(twin, config.objectid.packageId) };
       publicAccessCache.set(twinId, access);
     }
-    if (!access.twinPublic || (operationalData && !access.dataPublic)) throw publicTwinNotFound();
+    if (!access.twinPublic || (accessKind === true && !access.dataPublic) || (accessKind === "location" && !access.liveLocationPublic)) throw publicTwinNotFound();
     return twinId;
   }
 
@@ -753,6 +767,10 @@ function publicRealtimeEvent(event: TwinRealtimeEvent) {
     payload: event.payload,
     encryption: event.encryption,
   };
+}
+
+function publicPositionEvent(event: TwinRealtimeEvent) {
+  return { twinId: event.twinId, observedAt: event.position?.observedAt ?? event.observedAt, receivedAt: event.receivedAt, position: event.position };
 }
 
 function isMaintenanceEvent(body: any) {

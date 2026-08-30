@@ -31,3 +31,15 @@ test("injects deterministic CNC fault scenarios", () => {
   assert.equal(stopped.measurements.rotationalSpeed.value, 0);
   assert.equal(stopped.measurements.activePower.value, 0);
 });
+
+test("creates a deterministic CRS84 trajectory for a mobile asset", () => {
+  const sample = createTelemetry({
+    sequence: 10, machineName: "vehicle-1", assetId: "0xtwin", now: 1,
+    mobile: { enabled: true, centerLatitude: 45.4642, centerLongitude: 9.19, radiusKm: 4, speedKph: 36, intervalMs: 10000 },
+  });
+  assert.equal(sample.schema, "objectid.telemetry.mobile-asset.v1");
+  assert.equal(sample.position.type, "Point");
+  assert.equal(sample.position.coordinates.length, 2);
+  assert.equal(sample.position.crs, "OGC:CRS84");
+  assert.equal(sample.position.speed.value, 36);
+});

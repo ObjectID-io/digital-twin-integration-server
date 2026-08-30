@@ -26,4 +26,13 @@ describe("TwinRealtimeHub", () => {
     expect(event.payload).toEqual(payload);
     expect(event.encryption).toEqual({ encrypted: true, algorithm: "AES-256-GCM", keyId: "device-2026", version: 1 });
   });
+
+  it("exposes a normalized live position separately from the source payload", () => {
+    const hub = new TwinRealtimeHub();
+    const event = hub.publish({
+      mapping: { topic: "fleet/vehicle", twinId: "0xtwin", mode: "dataset", datasetType: "telemetry" },
+      topic: "fleet/vehicle", value: { observedAt: "2026-08-30T12:00:00Z", position: { coordinates: [9.19, 45.46], speed: { value: 50, unit: "km/h" } } }, observedAt: 100,
+    });
+    expect(event.position).toMatchObject({ type: "Point", coordinates: [9.19, 45.46], speedKph: 50 });
+  });
 });

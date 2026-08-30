@@ -9,7 +9,7 @@ function clamp(value, minimum, maximum) {
 
 export const SCENARIOS = ["normal", "overheat", "high-vibration", "spindle-overload", "pressure-loss", "emergency-stop"];
 
-export function createTelemetry({ sequence, machineName, assetId, scenario = "normal", now = Date.now(), random = Math.random }) {
+export function createTelemetry({ sequence, machineName, assetId, scenario = "normal", now = Date.now(), random = Math.random, mobile = null }) {
   const phase = sequence / 12;
   const noise = () => random() - 0.5;
   const temperatureC = clamp(62 + Math.sin(phase) * 7 + noise() * 1.5, 45, 85);
@@ -32,14 +32,16 @@ export function createTelemetry({ sequence, machineName, assetId, scenario = "no
   }
   if (scenario === "normal" && (simulatedTemperature > 78 || simulatedVibration > 4.5)) operatingState = "warning";
 
+  const position = mobile?.enabled ? simulatedPosition(sequence, mobile) : undefined;
   return {
-    schema: "objectid.telemetry.machine.v1",
+    schema: position ? "objectid.telemetry.mobile-asset.v1" : "objectid.telemetry.machine.v1",
     assetId,
     machineName,
     sequence,
     observedAt: new Date(now).toISOString(),
     operatingState,
     simulationScenario: scenario,
+    ...(position ? { position } : {}),
     measurements: {
       temperature: { value: round(simulatedTemperature), unit: "Cel" },
       vibration: { value: round(simulatedVibration), unit: "mm/s" },
@@ -47,5 +49,25 @@ export function createTelemetry({ sequence, machineName, assetId, scenario = "no
       activePower: { value: round(simulatedPower), unit: "kW" },
       pressure: { value: round(pressureBar), unit: "bar" }
     }
+  };
+}
+
+function simulatedPosition(sequence, mobile) {
+  const centerLatitude = Number(mobile.centerLatitude);
+  const centerLongitude = Number(mobile.centerLongitude);
+  const radiusKm = Number(mobile.radiusKm);
+  const speedKph = Number(mobile.speedKph);
+  const stepSeconds = Number(mobile.intervalMs) / 1000;
+  const circumferenceKm = Math.max(0.01, 2 * Math.PI * radiusKm);
+  const angle = ((sequence * speedKph * stepSeconds / 3600) / circumferenceKm) * Math.PI * 2;
+  const latitude = centerLatitude + (radiusKm / 111.32) * Math.sin(angle);
+  const longitude = centerLongitude + (radiusKm / (111.32 * Math.cos(centerLatitude * Math.PI / 180))) * Math.cos(angle);
+  return {
+    type: "Point",
+    coordinates: [round(longitude, 6), round(latitude, 6)],
+    crs: "OGC:CRS84",
+    accuracy: { value: 4.5, unit: "m" },
+    speed: { value: round(speedKph, 1), unit: "km/h" },
+    heading: { value: round((90 - angle * 180 / Math.PI + 360) % 360, 1), unit: "deg" },
   };
 }

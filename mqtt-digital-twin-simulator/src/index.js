@@ -133,6 +133,7 @@ function scopedConfiguration(validated, twinId) {
     generatedAt: validated.generatedAt,
     objectid: { network: validated.objectid.network ?? "testnet", tenantId: validated.objectid.tenantId, subscriptionId: validated.objectid.subscriptionId },
     twin: { id: twinId, name: sourceTwin?.name ?? `Simulated Twin ${twinId.slice(2, 10)}`, type: sourceTwin?.type ?? "machine" },
+    ...(validated.simulation ? { simulation: validated.simulation } : {}),
     mqtt: {
       endpoint: validated.mqtt.endpoint,
       clientId: validated.mqtt.clientId,
@@ -199,7 +200,7 @@ function createTwinRuntime(config) {
     publishing = true;
     try {
       sequence += 1;
-      const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario: control.scenario });
+      const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario: control.scenario, mobile: config.mobile });
       await client.publishAsync(config.topic, JSON.stringify(sample), { qos: config.qos, retain: false });
       status.published += 1;
       status.lastPublishedAt = sample.observedAt;
@@ -214,7 +215,7 @@ function createTwinRuntime(config) {
   async function publishStateTransition({ from, to }) {
     if (!client.connected) throw new Error("MQTT broker is unavailable");
     sequence += 1;
-    const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario: to });
+    const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario: to, mobile: config.mobile });
     const transition = { ...sample, transition: { kind: to === "normal" ? "fault-cleared" : "fault-opened", fromScenario: from, toScenario: to, source: "dt-simulator-control", occurredAt: sample.observedAt } };
     await client.publishAsync(config.stateTopic, JSON.stringify(transition), { qos: config.qos, retain: false });
     status.lastTransitionAt = sample.observedAt;
@@ -257,7 +258,7 @@ function createTwinRuntime(config) {
     if (processedCommands.size > 1000) processedCommands.delete(processedCommands.keys().next().value);
   }
   function publicStatus() {
-    return { ...status, scenario: control.scenario, paused: control.paused, changedAt: control.changedAt, machineName: config.machineName, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, network: config.network, credentialSource: config.credentialSource };
+    return { ...status, scenario: control.scenario, paused: control.paused, changedAt: control.changedAt, machineName: config.machineName, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, network: config.network, credentialSource: config.credentialSource, mobile: config.mobile.enabled };
   }
   async function stop() {
     if (timer) clearInterval(timer);

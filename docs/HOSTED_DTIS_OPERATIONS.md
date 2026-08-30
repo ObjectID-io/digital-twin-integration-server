@@ -96,6 +96,22 @@ off-chain and registered with URI/hash evidence. State publication and scenario
 transitions create on-chain `OIDTwinState`/Digital Thread evidence and consume
 the package-defined operation credit.
 
+## Moving assets
+
+A mobile Twin uses the same tenant-scoped dataset topic and adds a normalized
+`position` property to each observation. Use `OGC:CRS84` coordinates in
+longitude/latitude order. DTIS rejects invalid coordinates, retains accepted
+samples in the Dataset window and exposes the latest coordinate through the
+dedicated authenticated location endpoint.
+
+Do not continuously write GPS fixes to mutable on-chain metadata. Dynamic
+positions are operational data; IOTA receives a hash and Digital Thread event
+only when an authorized user creates an evidence Dataset. The independent
+`objectid.liveLocationVisibility` policy can expose the latest coordinate on
+the anonymous location-only endpoint without making the remaining telemetry
+public. Treat precise route history as sensitive data and choose publication
+frequency, precision and retention according to the fleet's privacy policy.
+
 ## Twin lifecycle API
 
 All tenant API routes require the tenant credential and reject cross-tenant Twin

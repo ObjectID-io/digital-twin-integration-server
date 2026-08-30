@@ -1,4 +1,5 @@
 import type { MappedMqttMessage } from "../twin/mqttMapping.js";
+import { positionFromPayload, type TwinPosition } from "./position.js";
 
 export interface RealtimeEncryptionMetadata {
   encrypted: boolean;
@@ -13,6 +14,7 @@ export interface TwinRealtimeEvent {
   observedAt: number;
   receivedAt: number;
   payload: unknown;
+  position?: TwinPosition;
   encryption: RealtimeEncryptionMetadata;
 }
 
@@ -34,6 +36,7 @@ export class TwinRealtimeHub {
       observedAt: message.observedAt,
       receivedAt: Date.now(),
       payload: message.value,
+      position: positionFromPayload(message.value, message.observedAt),
       encryption: encryptionMetadata(message.value),
     };
     this.latestEvents.set(twinId, event);
