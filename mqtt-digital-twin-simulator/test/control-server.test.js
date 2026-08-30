@@ -20,11 +20,15 @@ const hostedDeviceFile = {
 };
 
 test("applies simulator control commands", () => {
-  const control = { scenario: "normal", paused: false };
+  const control = { scenario: "normal", paused: false, mobileEnabled: false };
   const transition = applyCommand({ action: "scenario", scenario: "overheat" }, control);
   assert.equal(control.scenario, "overheat");
   assert.deepEqual(transition, { previousScenario: "normal", scenarioChanged: true });
   assert.equal(applyCommand({ action: "scenario", scenario: "overheat" }, control).scenarioChanged, false);
+  applyCommand({ action: "enable-mobility" }, control);
+  assert.equal(control.mobileEnabled, true);
+  applyCommand({ action: "toggle-mobility" }, control);
+  assert.equal(control.mobileEnabled, false);
   applyCommand({ action: "pause" }, control);
   assert.equal(control.paused, true);
   const cleared = applyCommand({ action: "reset" }, control);

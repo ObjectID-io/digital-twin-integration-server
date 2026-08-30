@@ -22,7 +22,9 @@ The simulator reads the MQTT endpoint, one-time password, Twin-scoped username, 
 
 Open `https://dt-simulator.objectid.io`, select one or more per-Twin JSON files in **Add simulated Twins** and choose **Add Twin files**. No additional password is required: possession of the one-time device file and successful authentication of its MQTT credential authorize that Twin's self-provisioning. Only files bound to the hosted `dtis.objectid.io` testnet or mainnet MQTT endpoint are accepted through this flow. The server verifies the credential before storing the file separately under `/data/twins` with mode `0600`, then starts or replaces only that Twin runtime. Existing simulations continue without a restart.
 
-Use the Twin selector to inspect and control a simulation. **Remove** deletes only its local simulator configuration and never deletes the on-chain Digital Twin; this management operation still requires the simulator administration password from `/run/secrets/sim_control_password`.
+Use the Twin selector to inspect and control a simulation. **Enable mobility** starts publishing a dynamic GeoJSON position for the selected asset; **Disable mobility** stops including that dynamic position in subsequent telemetry. The command publishes one sample immediately, affects only the selected Twin and does not change any other runtime. This control is operational rather than persistent: after a simulator restart, mobility returns to the value stored in the Twin configuration or `SIM_MOBILE_ENABLED`.
+
+**Remove** deletes only its local simulator configuration and never deletes the on-chain Digital Twin; this management operation still requires the simulator administration password from `/run/secrets/sim_control_password`.
 
 On the VPS, read that administration password with:
 
@@ -45,6 +47,11 @@ Before the first valid upload, the container may connect with the legacy broker 
 | `SIM_INTERVAL_MS` | `15000` | Sample interval, minimum 1000 ms. |
 | `SIM_ASSET_ID` | `unknown` | Object ID included in each sample. |
 | `SIM_MACHINE_NAME` | `mqtt-digital-twin` | Simulated machine name. |
+| `SIM_MOBILE_ENABLED` | `true` in the supplied Compose stack | Initial mobility state restored when the simulator starts. |
+| `SIM_MOBILE_CENTER_LATITUDE` | `45.4642` | Latitude of the simulated circular route centre. |
+| `SIM_MOBILE_CENTER_LONGITUDE` | `9.1900` | Longitude of the simulated circular route centre. |
+| `SIM_MOBILE_RADIUS_KM` | `4` | Radius of the simulated route in kilometres. |
+| `SIM_MOBILE_SPEED_KPH` | `42` | Simulated asset speed in kilometres per hour. |
 | `SIM_STATE_TOPIC` | `objectid/twins/telemetry/state` | Topic used once per fault transition to create an on-chain State Published event. |
 | `SIM_COMMAND_TOPIC` | `objectid/twins/{SIM_ASSET_ID}/commands/request` | Signed operational commands dispatched by the Integration Server. |
 | `SIM_COMMAND_INTERFACE_ID` | `urn:objectid:interface:simulator-control:v1` | Only commands for this allowlisted interface are accepted. |
