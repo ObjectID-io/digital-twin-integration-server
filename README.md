@@ -263,6 +263,13 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [STATELESS.md](docs/STATELESS.md),
 [ISO_ALIGNMENT.md](docs/ISO_ALIGNMENT.md), [STORAGE.md](docs/STORAGE.md) and
 [ISO_CONFORMANCE_MATRIX.md](docs/ISO_CONFORMANCE_MATRIX.md).
 
+## License
+
+ObjectID Digital Twin Integration Server is licensed under the
+[Apache License, Version 2.0](LICENSE) (`Apache-2.0`). Third-party dependencies
+retain their respective licenses. This license does not change the licensing
+of separate ObjectID projects, including the DT web application.
+
 # ISO Alignment Evidence
 
 The server provides versioned profile validation, a replaceable Twin indexer boundary, globally indexed identifier resolution, paginated Digital Thread verification/audit reports, on-chain role-grant enforcement, and MQTT/OPC-UA ingestion through one queue/aggregation pipeline. See `docs/ISO_CONFORMANCE_MATRIX.md` and run `npm run conformance-report` for repeatable technical evidence. These capabilities are ISO-aligned; they are not an ISO certification claim.

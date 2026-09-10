@@ -7,9 +7,11 @@ COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
 FROM node:20-alpine AS runtime
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 ENV NODE_ENV=production DTIS_CONFIG=/config/config.yaml DTIS_PROFILES_DIRECTORY=/profiles DTIS_DATA_DIRECTORY=/data
 WORKDIR /app
 RUN addgroup -S objectid && adduser -S -G objectid objectid && apk add --no-cache mosquitto
+COPY LICENSE ./LICENSE
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY console ./console
