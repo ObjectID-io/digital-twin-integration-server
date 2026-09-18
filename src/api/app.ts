@@ -89,6 +89,11 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const app = express();
   if (config.server.trustProxy) app.set("trust proxy", 1);
   app.disable("x-powered-by");
+  // The public testnet deployment lives at /; accept explicit navigation aliases.
+  if (config.objectid.network === "testnet") {
+    app.get(["/testnet", "/testnet/"], (_q, r) => r.redirect(302, "/"));
+    app.get(["/testnet/tenant", "/testnet/tenant/"], (_q, r) => r.redirect(302, "/tenant"));
+  }
   app.use(helmet());
   app.use("/api/plants", express.json({ limit: "32mb" }));
   app.use("/api/v1/twins/:id/evidence-bundles/validate", express.json({ limit: "4mb" }));
