@@ -9,7 +9,7 @@ const defaults: AppConfig = {
   server: { host: "0.0.0.0", port: 8080, bodyLimitBytes: 1_048_576, trustProxy: false },
   objectid: { network: "testnet", rpcUrl: "", packageId: "", timeoutMs: 30_000 },
   profiles: { directory: "./profiles" },
-  connectors: { rest: { enabled: true }, mqtt: { enabled: false }, opcua: { enabled: false }, modbus: { enabled: false, status: "PLUGIN_READY" } },
+  connectors: { rest: { enabled: true }, mqtt: { enabled: false }, opcua: { enabled: false }, ai: { enabled: false }, modbus: { enabled: false, status: "PLUGIN_READY" } },
   commands: { enabled: false, storeFile: "./data/commands.json", requestTopicTemplate: "objectid/twins/{twinId}/commands/request", resultTopic: "objectid/twins/+/commands/+/result", catalogs: [] },
   security: {
     credentialProvider: "environment",

@@ -2,6 +2,7 @@ import { AppError } from "../common/errors.js";
 import { MqttConnector } from "./mqtt.js";
 import { RestConnector } from "./rest.js";
 import { OpcUaConnector } from "./opcua.js";
+import { AiAnalysisConnector } from "./ai-analysis.js";
 import type { HealthStatus, TwinConnector } from "./types.js";
 
 type ConnectorBuilder = () => TwinConnector;
@@ -12,6 +13,7 @@ export class ConnectorFactory {
     this.register("rest", () => new RestConnector());
     this.register("mqtt", () => new MqttConnector());
     this.register("opcua", () => new OpcUaConnector());
+    this.register("ai", () => new AiAnalysisConnector());
     for (const type of ["modbus", "websocket"]) {
       this.register(type, () => new PluginReadyConnector(type));
     }

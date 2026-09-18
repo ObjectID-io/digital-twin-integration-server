@@ -80,6 +80,11 @@ MinIO and one-time bucket initialization; credentials come from `.env`.
 
 ## Connectors
 
+An experimental, opt-in [AI analysis connector](docs/AI-CONNECTOR.md) can send
+explicitly selected numeric telemetry to a customer-approved HTTP agent. Its
+advisory result is exposed separately in authenticated realtime snapshots;
+original telemetry is unchanged. It is disabled by default.
+
 REST supports outbound HTTP with timeout and circuit breaker. MQTT supports
 TLS/authentication, QoS, publish, wildcard subscriptions and configured
 topic-to-Twin mappings. MQTT `state` mappings enqueue `publishState`; `dataset`

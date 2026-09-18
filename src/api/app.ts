@@ -35,6 +35,7 @@ import { ObjectIdTwinIndexer } from "../indexer/objectid.js";
 import type { PaginationOptions } from "../indexer/types.js";
 import { validateCompositionInput, validateIdentifierMappingInput, validateInterfaceInput } from "../twin/standardsValidation.js";
 import { TwinRealtimeHub, type TwinRealtimeEvent } from "../realtime/hub.js";
+import { AiAnalysisConnector } from "../connectors/ai-analysis.js";
 import { objectIdTwinPublicAccess } from "../twin/publicVisibility.js";
 import { CommandService } from "../commands/service.js";
 import { StorageRetentionService } from "../storage/retention.js";
@@ -367,7 +368,9 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   api.get("/twins/:id/realtime/latest", (request, response) => {
     const latest = realtime.latest(request.params.id!);
     if (!latest) return response.status(404).json({ error: { code: "REALTIME_DATA_UNAVAILABLE", message: "No realtime data is available for this Twin", category: "CONNECTOR" } });
-    return response.set("Cache-Control", "no-store").json(latest);
+    const ai = connectors.get("ai");
+    return response.set("Cache-Control", "no-store").json({ ...latest,
+      ...(ai instanceof AiAnalysisConnector ? { analysis: ai.latest(request.params.id!) } : {}) });
   });
   api.get("/twins/:id/location/latest", (request, response) => {
     const latest = realtime.latest(request.params.id!);
@@ -599,7 +602,9 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   async function ingestMqttMessage(message: MappedMqttMessage) {
     const accounting = await connectorAccounting(String(message.mapping.tenantId ?? ""));
     if (accounting) await assertAccountingTwin(accounting, message.mapping.twinId);
-    realtime.publish(message);
+    const event = realtime.publish(message);
+    const ai = connectors.get("ai");
+    if (ai instanceof AiAnalysisConnector) ai.observe(accounting?.tenantId ?? String(message.mapping.tenantId ?? ""), event);
     if (message.mapping.mode === "dataset") {
       if (!config.dataset.aggregation.enabled) throw new AppError("DATASET_AGGREGATION_DISABLED", "Dataset aggregation is disabled", 422, "CONNECTOR");
       const mapped = mqttMessageToDataset(message);
