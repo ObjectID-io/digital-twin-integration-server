@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const {chromium}=createRequire(import.meta.url)('playwright');
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try {
- for(const network of ['testnet','mainnet']){
+ for(const [network,suffix] of [['testnet','/'],['mainnet','/mainnet/'],['mainnet','/mainnet']]){
  const page=await browser.newPage();let enabled=true,writes=0;
  await page.route('**/*',async route=>{
   const path=new URL(route.request().url()).pathname;
@@ -15,13 +15,13 @@ try {
   }
   if(path.endsWith('status.js'))return route.fulfill({contentType:'application/javascript',body:await readFile('console/status.js','utf8')});
   if(path.endsWith('status.css'))return route.fulfill({contentType:'text/css',body:await readFile('console/status.css','utf8')});
-  if(path.endsWith('/'))return route.fulfill({contentType:'text/html',body:(await readFile('console/index.html','utf8')).replace(/<script type="module"[^>]*><\/script>/g,'')});
+  if(path.endsWith('/') || path==='/mainnet')return route.fulfill({contentType:'text/html',body:(await readFile('console/index.html','utf8')).replace(/<script type="module"[^>]*><\/script>/g,'')});
   return route.fulfill({body:''});
  });
- await page.goto('https://dtis.example/'+(network==='mainnet'?'mainnet/':''));
+ await page.goto('https://dtis.example'+suffix);
  await page.locator('.service-card').first().waitFor();
  assert.equal(await page.locator('.module-controls').count(),0);
- const session=async(auth,net)=>page.evaluate(({auth,net})=>window.dispatchEvent(new CustomEvent('dtis-native-session',{detail:{authenticated:auth,network:net}})),{auth,net});
+ const session=async(auth,net)=>page.evaluate(({auth,net})=>window.dispatchEvent(new CustomEvent('dtis-native-session',{detail:{authenticated:auth,network:net,did:'did:iota:'+(net==='testnet'?'testnet:':'')+'0x'+'a'.repeat(64)}})),{auth,net});
  await session(true,network==='mainnet'?'testnet':'mainnet');
  assert.equal(await page.locator('.module-controls').count(),0);
  await session(true,network);

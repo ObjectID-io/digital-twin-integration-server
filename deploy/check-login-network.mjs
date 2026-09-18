@@ -31,8 +31,8 @@ try {
   await page.locator('[name=did]').fill('did:iota:'+(target==='testnet'?'testnet:':'')+'0x'+'a'.repeat(64));
   await page.locator('[name=seed]').fill('1'.repeat(64));
   await page.locator('#sign-in-submit').click();
-  await page.waitForURL(base+targetPrefix+'/tenant');
-  assert.deepEqual(calls,[targetPrefix+'/api/device-auth/challenge',targetPrefix+'/api/device-auth/verify']);
+  await page.waitForURL(base+targetPrefix+'/');
+  assert.deepEqual(calls,[targetPrefix+'/api/device-auth/challenge',targetPrefix+'/api/device-auth/verify',(target==='mainnet'?'':'/mainnet')+'/api/device-auth/logout']);
   assert.equal(await page.locator('.brand img').evaluate(img=>img.complete&&img.naturalWidth>0),true);
   await page.close();console.log(source+' -> '+target+': passed');
  }

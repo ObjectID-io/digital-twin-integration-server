@@ -1,7 +1,7 @@
 import {Ed25519Keypair} from "@iota/iota-sdk/keypairs/ed25519";
 import {parseRecoveryFile,decryptRecoveryFile} from "./seed-recovery.js";
 import {loginNetwork,loginPrefix} from "./login-network.js";
-const $=id=>document.getElementById(id),form=$("did-login"),prefix=location.pathname.replace(/\/(devices|my-twins|tenant)\/?$/,"").replace(/\/$/,"");
+const $=id=>document.getElementById(id),form=$("did-login"),prefix=/^\/mainnet(?:\/|$)/.test(location.pathname)?"/mainnet":"";
 let recovery=null,activeNetwork=null;
 const networkHint=document.createElement("p"),networkLink=document.createElement("a");
 networkHint.className="eyebrow";networkHint.setAttribute("role","status");
@@ -32,7 +32,9 @@ async function session(explicit=false) {
   $("subscription-info").textContent=value.subscriptionConfigured?"Subscription linked. Validity and availability are checked before creating a Twin.":"No subscription linked on this IS. Activate one in DT or contact your IS administrator.";
   $("subscription-link").href=value.network==="mainnet"?"https://dt.objectid.io/":"https://dt-demo.objectid.io/";
   if(!value.available)$("login-message").textContent="DID sign-in is not configured on this IS yet.";
-  window.dtisSessionState={authenticated:Boolean(value.session),network:value.network,explicit};
+  let didNetwork=null;
+  try {if(value.session?.did)didNetwork=loginNetwork(value.session.did);}catch{}
+  window.dtisSessionState={authenticated:Boolean(value.session) && didNetwork===value.network,network:didNetwork,did:value.session?.did || null,explicit};
   window.dispatchEvent(new CustomEvent("dtis-native-session",{detail:window.dtisSessionState}));
 }
 form.elements.recovery.onchange=async event=>{
@@ -58,8 +60,10 @@ form.onsubmit=async event=>{
     const did=didInput,challenge=await api("challenge",{did},targetPrefix);
     const signed=await keypair.signPersonalMessage(new TextEncoder().encode(challenge.message));keypair=undefined;
     await api("verify",{did,challengeId:challenge.challengeId,signature:signed.signature},targetPrefix);
+    // A new explicit login replaces the other network's previous identity.
+    await api("logout",{},enteredNetwork==="mainnet"?"":"/mainnet").catch(()=>{});
     recovery=null;form.reset();$("login-message").textContent="";
-    if(targetPrefix!==prefix){location.assign(targetPrefix+"/tenant");return;}
+    if(targetPrefix!==prefix){location.assign(targetPrefix+"/");return;}
     await session(true);
   } catch(error) {$("login-message").textContent=error.message;}
   finally {seed="";keypair=undefined;form.elements.seed.value="";form.elements.recoveryPassword.value="";button.disabled=false;}

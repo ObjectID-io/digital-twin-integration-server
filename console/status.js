@@ -21,15 +21,20 @@ const metricDefinitions = [
 ];
 
 const byId = (id) => document.getElementById(id);
+const apiPrefix=/^\/mainnet(?:\/|$)/.test(location.pathname)?"/mainnet":"";
 let pageNetwork=null, currentServices=[], moduleState=[], moduleError="", moduleBusy=false, sessionGeneration=0;
 let loginState=window.dtisSessionState || {authenticated:false};
 const moduleForService={"connector-rest":"rest","connector-ai":"ai","connector-mqtt":"commands"};
-function mayControl(){return loginState.authenticated && loginState.network===pageNetwork;}
+function mayControl(){
+  const did=String(loginState.did || "");
+  const didNetwork=/^did:iota:testnet:0x[0-9a-fA-F]{64}$/.test(did)?"testnet":/^did:iota:0x[0-9a-fA-F]{64}$/.test(did)?"mainnet":null;
+  return loginState.authenticated && didNetwork===pageNetwork && loginState.network===pageNetwork && pageNetwork===(apiPrefix?"mainnet":"testnet");
+}
 async function loadModules(){
   const generation=++sessionGeneration;
   if(!mayControl()){moduleState=[];moduleError="";return;}
   try{
-    const response=await fetch("api/modules/",{credentials:"same-origin",cache:"no-store"});
+    const response=await fetch(apiPrefix+"/api/modules/",{credentials:"same-origin",cache:"no-store"});
     const data=await response.json();
     if(!response.ok)throw Error(data.error?.message || "Module controls unavailable");
     if(generation===sessionGeneration && mayControl()){moduleState=data.modules;moduleError="";}
@@ -59,7 +64,7 @@ function appendModuleControls(card,service){
       const generation=sessionGeneration;
       moduleBusy=true;renderServices(currentServices);
       try{
-        const response=await fetch("api/modules/"+id,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:!state.enabled})});
+        const response=await fetch(apiPrefix+"/api/modules/"+id,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:!state.enabled})});
         const data=await response.json();
         if(!response.ok)throw Error(data.error?.message || "Unable to update module");
         if(generation===sessionGeneration && mayControl()){moduleState=data.modules;moduleError="";}
@@ -125,7 +130,7 @@ async function refresh() {
   button.disabled = true;
   button.textContent = "CHECKING";
   try {
-    const response = await fetch("status.json", { cache: "no-store" });
+    const response = await fetch(apiPrefix+"/status.json", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     pageNetwork=data.network;
