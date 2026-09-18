@@ -9,6 +9,31 @@ const event = () => new TwinRealtimeHub().publish({ mapping: { twinId: "twin-a",
 const response = () => new Response(JSON.stringify({ summary: "Temperature is 42.", limitations: "One sample; no trend established." }));
 
 describe("AI analysis connector", () => {
+  it("uses OpenAI structured Responses without identifiers or stored responses", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "completed", output: [
+      { type: "message", content: [{ type: "output_text", text: JSON.stringify({ summary: "42 degrees.", limitations: "Synthetic sample." }) }] }
+    ] })));
+    const ai = new AiAnalysisConnector(fetcher);
+    await ai.connect({ ...config, provider: "openai", endpoint: "https://api.openai.com/v1/responses", token: "test-token", model: "gpt-5.4" });
+    ai.observe("tenant-a", event());
+    await vi.waitFor(() => expect(ai.latest("twin-a")?.summary).toBe("42 degrees."));
+    const body = JSON.parse(fetcher.mock.calls[0]![1].body);
+    expect(body.store).toBe(false);
+    expect(body.text.format.strict).toBe(true);
+    expect(body.tools).toBeUndefined();
+    expect(body.input).not.toMatch(/tenant-a|twin-a|never-send/);
+    expect(JSON.parse(body.input).samples[0].values).toEqual({ "measurements.temperature.value": 42 });
+    await ai.disconnect();
+  });
+  it("rejects redirected OpenAI credentials and incomplete provider output", async () => {
+    const ai = new AiAnalysisConnector(vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "incomplete", output: [] }))));
+    await expect(ai.connect({ ...config, provider: "openai", token: "secret" })).rejects.toThrow("official");
+    await ai.connect({ ...config, provider: "openai", endpoint: "https://api.openai.com/v1/responses", token: "test-token" });
+    ai.observe("tenant-a", event());
+    await vi.waitFor(async () => expect((await ai.healthCheck()).healthy).toBe(false));
+    expect(ai.latest("twin-a")).toBeNull();
+    await ai.disconnect();
+  });
   it("pauses in-flight analysis and resumes without accepting late results", async () => {
     let finish!: (r: Response) => void;
     const fetcher = vi.fn().mockImplementation(() => new Promise<Response>(resolve => { finish = resolve; }));

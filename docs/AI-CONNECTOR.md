@@ -3,8 +3,8 @@
 The optional `ai` connector observes accepted realtime telemetry without modifying
 the original payload, archiving AI output as telemetry, publishing transactions or
 executing commands. It is disabled by default. It does not install or run a model.
-An operator must supply an HTTP analysis agent implementing the contract below;
-this can wrap a local model or an explicitly approved external provider.
+An operator can supply an HTTP analysis agent implementing the contract below,
+or select the native OpenAI Responses adapter after explicit external-sharing approval.
 
 ## Configuration
 
@@ -36,6 +36,24 @@ trusted local/private agent. Do not use this override for Internet endpoints.
 Redirects are rejected. DID seeds, encryption passwords and DTIS API credentials
 are never part of the analysis request. An optional dedicated bearer token is
 resolved using the existing credential provider.
+
+## Native OpenAI provider
+
+Set `provider: openai`, `model: gpt-5.4`, `intervalMs: 300000`, and
+`timeoutMs: 30000` in the same scoped configuration. Omit `endpoint`; the adapter
+only accepts `https://api.openai.com/v1/responses`. Supply `OPENAI_API_KEY` through
+the service's private environment (for example a git-ignored, mode-600 env file),
+or use the existing `token` credential reference. Never commit a real key.
+
+An optional administrator-controlled `context` (maximum 2000 characters) supplies
+units and domain limitations. Do not include customer identifiers or secrets.
+Requests use structured JSON output, `store: false`, no tools, and selected numeric
+samples only. Provider retention policies still apply; this is not a zero-retention
+guarantee. Refusals, incomplete output and invalid responses are rejected.
+
+Module controls on the service card suspend new requests and abort in-flight
+requests for the authenticated tenant. They cannot undo data already sent or charges
+already incurred. Pausing does not stop telemetry ingestion.
 
 ## Agent contract
 
