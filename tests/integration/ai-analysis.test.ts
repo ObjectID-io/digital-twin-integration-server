@@ -11,7 +11,7 @@ it("adds AI output to private snapshots without changing stored telemetry", asyn
   const ai = new AiAnalysisConnector(vi.fn().mockResolvedValue(new Response(JSON.stringify({ summary: "Observed 42", limitations: "Single sample" }))));
   runtime.connectors.register(ai);
   await ai.connect({ endpoint: "https://agent.example", model: "test", allowDataSharing: true,
-    scopes: [{ tenantId: "tenant-a", twinId: "0xtwin", fields: ["temperature"] }] });
+    scopes: [{ tenantId: "tenant-a", twinId: "0xtwin", prompt: "Describe temperature observations.", fields: ["temperature"] }] });
   try {
     await runtime.ingestMqttMessage({ mapping: { twinId: "0xtwin", topic: "a", aspect: "telemetry", sampleType: "observed" },
       topic: "a", value: { temperature: 42 }, observedAt: Date.now() });

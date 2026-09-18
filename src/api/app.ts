@@ -159,7 +159,7 @@ export function createApp(config: AppConfig, adapter?: ObjectIdAdapter, sharedId
   const moduleSettings = new TenantModules(resolve(plantCatalogDirectory(config), "tenant-modules.json"));
   app.use("/api/modules", moduleRoutes(deviceDidAuth, tenants, moduleSettings, (tenant, module) => {
     if (module === "commands") return config.commands.enabled;
-    if (module === "ai") return Boolean(config.connectors.ai?.enabled && (config.connectors.ai.scopes as {tenantId: string}[] | undefined)?.some(s => s.tenantId === tenant));
+    if (module === "ai") return Boolean(config.connectors.ai?.enabled && (config.connectors.ai.scopes as {tenantId: string; prompt?: string; enabled?: boolean}[] | undefined)?.some(s => s.tenantId === tenant && s.enabled !== false && s.prompt?.trim()));
     return Boolean(config.connectors.rest?.enabled);
   }, (tenant, module, enabled) => {
     const ai = connectors.get("ai");

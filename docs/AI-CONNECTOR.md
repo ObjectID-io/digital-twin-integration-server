@@ -25,6 +25,11 @@ ai:
   scopes:
     - tenantId: your-exact-tenant-id
       twinId: your-exact-twin-id
+      enabled: true
+      prompt: >-
+        Assess cooling performance for this machine using temperature in Celsius
+        and vibration in mm/s. Describe trends and possible anomalies. No validated
+        thresholds or maintenance history are available; do not predict failure dates.
       fields:
         - measurements.temperature.value
         - measurements.vibration.value
@@ -45,8 +50,11 @@ only accepts `https://api.openai.com/v1/responses`. Supply `OPENAI_API_KEY` thro
 the service's private environment (for example a git-ignored, mode-600 env file),
 or use the existing `token` credential reference. Never commit a real key.
 
-An optional administrator-controlled `context` (maximum 2000 characters) supplies
-units and domain limitations. Do not include customer identifiers or secrets.
+Each scope requires its own administrator-controlled `prompt` (maximum 4000
+characters) supplying the objective, units and domain limitations. Missing, empty
+or whitespace-only prompts disable analysis for that Twin. `enabled: false` also
+disables the individual Twin. Legacy global `context` is ignored: there is no
+generic prompt fallback. Do not include customer identifiers or secrets.
 Requests use structured JSON output, `store: false`, no tools, and selected numeric
 samples only. Provider retention policies still apply; this is not a zero-retention
 guarantee. Refusals, incomplete output and invalid responses are rejected.
@@ -54,6 +62,19 @@ guarantee. Refusals, incomplete output and invalid responses are rejected.
 Module controls on the service card suspend new requests and abort in-flight
 requests for the authenticated tenant. They cannot undo data already sent or charges
 already incurred. Pausing does not stop telemetry ingestion.
+
+## Administration and migration
+
+Only the Integration Server operator manages prompts through its protected YAML
+configuration (`connectors.ai.scopes`). Owning a Twin or signing in as a tenant
+owner does not grant permission to edit these prompts; no tenant prompt-write API
+is exposed. The existing tenant module control remains an additional pause gate.
+
+Move an existing global context into the appropriate Twin's `prompt` explicitly;
+do not copy it indiscriminately to every Twin. After changing YAML, restart the
+DTIS service to apply it. Configuration reloads abort pending analysis and clear
+old results. A removed prompt then produces `analysis: null`, so the webview shows
+its absent-analysis state. Editing the YAML file alone is not a live reload.
 
 ## Agent contract
 
