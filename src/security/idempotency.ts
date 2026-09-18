@@ -80,7 +80,8 @@ export class RedisIdempotencyStore implements IdempotencyStore {
 }
 
 function fingerprint(request: Request) {
-  return createHash("sha256").update(JSON.stringify({ method: request.method, path: request.path, body: request.body })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ method: request.method, path: request.path, body: request.body,
+    subject: request.auth?.subject, accounting: request.auth?.accounting })).digest("hex");
 }
 
 export function idempotencyMiddleware(store: IdempotencyStore, ttlMs = 300_000) {

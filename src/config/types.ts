@@ -8,6 +8,8 @@ export interface AppConfig {
     network: string;
     rpcUrl: string;
     packageId: string;
+    executionPackageId?: string;
+    accessPackageId?: string;
     timeoutMs: number;
     signer?: {
       enabled: boolean;

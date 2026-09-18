@@ -1,5 +1,28 @@
 # ObjectID Digital Twin Stateless Integration Server
 
+## Signed historical data sharing
+
+[Signed historical datasets](docs/SHARED_DATASETS.md) documents DID-authorized
+export APIs, private storage, temporary ZIP lifetime, the Ed25519 manifest
+signature and public-key verification. The Webview offers **Data download** and
+a **VALIDATE DATASET ZIP** popup; validation stays in the browser. These signed
+JSON/CSV exports are separate from IOTA-anchored Portable evidence bundles.
+
+## User interface boundary
+
+Device registration, sample mapping and Twin creation are performed in DT/DT-demo
+through authenticated IS APIs. The old `/devices` and `/my-twins` pages redirect to
+DT without forwarding credentials. Existing device records and catalog APIs remain.
+
+The IS homepage retains DID sign-in. **Tenant access** (`/tenant`) manages the
+authenticated DID's tenant application credentials. It can inspect status,
+generate/rotate credentials with confirmation and revoke application access.
+Device credentials are not revoked by this panel. New secrets are returned once.
+
+Subscription purchase, activation, renewal and billing remain exclusively in the
+private DT control plane. IS verifies the existing on-chain subscription before
+issuing credentials; no subscription-admin capability is needed by this panel.
+
 The root URL serves a public, read-only operations console with sanitized health
 information for DTIS dependencies, connectors and storage. Its data is available
 as JSON at `GET /status.json`; no tenant configuration, credentials or payloads

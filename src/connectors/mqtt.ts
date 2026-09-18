@@ -1,5 +1,7 @@
 import mqtt, { type IClientOptions, type MqttClient } from "mqtt";
 import { AppError } from "../common/errors.js";
+import { logger } from "../common/logger.js";
+import { connectorErrors } from "../health/metrics.js";
 import type { HealthStatus, Subscription, TwinConnector } from "./types.js";
 
 export interface MqttMapping {
@@ -51,7 +53,7 @@ export class MqttConnector implements TwinConnector {
       if (!mqttMatch(topicFilter, topic)) return;
       let value: unknown = payload.toString();
       try { value = JSON.parse(payload.toString()); } catch { /* raw response is ignored by the command service */ }
-      Promise.resolve(handler({ topic, value, observedAt: Date.now() })).catch(() => undefined);
+      Promise.resolve(handler({ topic, value, observedAt: Date.now() })).catch((error) => logHandlerFailure(topic, error));
     };
     this.client.on("message", listener);
     return { close: async () => { this.client?.off("message", listener); await this.client?.unsubscribeAsync(topicFilter); } };
@@ -66,13 +68,19 @@ export class MqttConnector implements TwinConnector {
       if (!mapping) return;
       let value: unknown = payload.toString();
       try { value = JSON.parse(payload.toString()); } catch { /* raw text is valid */ }
-      Promise.resolve(handler({ mapping, topic, value, observedAt: Date.now() })).catch(() => undefined);
+      Promise.resolve(handler({ mapping, topic, value, observedAt: Date.now() })).catch((error) => logHandlerFailure(topic, error));
     };
     this.client.on("message", listener);
     return { close: async () => { this.client?.off("message", listener); } };
   }
   async healthCheck(): Promise<HealthStatus> { return { healthy: Boolean(this.client?.connected), checkedAt: new Date().toISOString() }; }
   async disconnect() { if (this.client) await this.client.endAsync(); }
+}
+
+function logHandlerFailure(topic: string, error: unknown) {
+  const classification = error instanceof AppError ? error.code : "HANDLER_ERROR";
+  connectorErrors.inc({ connector: "mqtt" });
+  logger.error({ connector: "mqtt", topic, classification, err: error }, "mqtt_subscription_handler_failed");
 }
 
 export function mqttMatch(pattern: string, topic: string) {

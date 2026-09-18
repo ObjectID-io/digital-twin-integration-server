@@ -7,7 +7,7 @@ server:
 objectid:
   network: testnet
   rpcUrl: https://api.testnet.iota.cafe
-  packageId: "0xbab702f8fb2478bac6df8b64c5b92ca998366791913659f373bddc05d89c5147"
+  packageId: "0x6b9c3016c5e57fea26681d6a60c8b341c3f54fd2432ef19030dc700cf43b1193"
   timeoutMs: 30000
   signer:
     enabled: true
@@ -191,4 +191,8 @@ retention:
   intervalMs: 3600000
   startupDelayMs: 60000
   maxDeletesPerRun: 500
+  onChainStates:
+    enabled: true
+    retentionDays: 30
+    maxPrunesPerRun: 50
   ownerPolicies: []

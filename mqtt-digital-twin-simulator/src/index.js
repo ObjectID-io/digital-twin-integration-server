@@ -1,12 +1,15 @@
 import { chmod, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import mqtt from "mqtt";
+import { devicePayload } from "./device-onboarding.js";
 import { createTelemetry } from "./telemetry.js";
 import { applyCommand, createControlServer } from "./control-server.js";
 import { executeSimulatorCommand, verifySimulatorCommand } from "./commands.js";
 import { loadSimulatorConfig, loadSimulatorConfigFromValue, validateIntegrationConfig } from "./config.js";
+import { SimulationStore } from './simulation-store.js';
 
 const configDirectory = process.env.OBJECTID_SIMULATOR_CONFIG_DIR ?? "/data/twins";
+const simulationStore = new SimulationStore(join(configDirectory, 'simulation-settings'));
 const legacyConfigFile = process.env.OBJECTID_INTEGRATION_CONFIG_FILE ?? "/data/integration.json";
 const controlPasswordFile = process.env.SIM_CONTROL_PASSWORD_FILE ?? "/run/secrets/sim_control_password";
 const controlPassword = (await readFile(controlPasswordFile, "utf8")).trimEnd();
@@ -53,6 +56,7 @@ async function activateIntegrationConfig(value) {
   for (const twinIdValue of validated.objectid.twinIds) {
     const twinId = String(twinIdValue).toLowerCase();
     const config = await loadSimulatorConfigFromValue(value, process.env, readFile, twinId);
+    config.simulation = await simulationStore.load(twinId, config.simulation);
     const previous = runtimes.get(twinId);
     if (previous) await previous.stop();
     runtimes.set(twinId, createTwinRuntime(config));
@@ -116,7 +120,7 @@ async function verifyMqttCredential(config) {
 
 async function removeIntegrationConfig(twinIdValue) {
   const twinId = String(twinIdValue ?? "").toLowerCase();
-  if (!/^0x[0-9a-f]{64}$/.test(twinId)) throw new Error("A valid Twin ID is required");
+  if (!/^(0x[0-9a-f]{64}|device-[0-9a-f-]{36})$/.test(twinId)) throw new Error("A valid Twin or device ID is required");
   const runtime = runtimes.get(twinId);
   if (!runtime) throw new Error("Simulated Twin is not configured");
   await runtime.stop();
@@ -126,6 +130,7 @@ async function removeIntegrationConfig(twinIdValue) {
 }
 
 function scopedConfiguration(validated, twinId) {
+  if(validated.bootstrapDevice) return {...validated,mqtt:{...validated.mqtt,topics:{telemetry:validated.mqtt.topics[0].dataset}}};
   const topics = validated.mqtt.topics.find((item) => String(item.twinId).toLowerCase() === twinId);
   const sourceTwin = String(validated.twin?.id ?? "").toLowerCase() === twinId ? validated.twin : null;
   return {
@@ -146,12 +151,9 @@ function scopedConfiguration(validated, twinId) {
 
 async function controlTwin(command) {
   const twinId = String(command?.twinId ?? "").toLowerCase();
-  const runtime = runtimes.get(twinId) ?? (runtimes.size === 1 ? runtimes.values().next().value : null);
+  const runtime = twinId ? runtimes.get(twinId) : (runtimes.size === 1 ? runtimes.values().next().value : null);
   if (!runtime) throw new Error("Select a configured simulated Twin");
-  const result = applyCommand(command, runtime.control);
-  await runtime.publishSample();
-  if (result.scenarioChanged) await runtime.publishStateTransition({ from: result.previousScenario, to: runtime.control.scenario });
-  return runtime.publicStatus();
+  return runtime.controlCommand(command);
 }
 
 function fleetStatus() {
@@ -167,7 +169,28 @@ function fleetStatus() {
 
 function createTwinRuntime(config) {
   const status = { connected: false, published: 0, lastPublishedAt: null, lastError: null };
-  const control = { scenario: "normal", paused: config.assetId === "unknown", mobileEnabled: Boolean(config.mobile.enabled), changedAt: new Date().toISOString() };
+  const control = { ...config.simulation, energyStep: 0, scenario: "normal", paused: config.assetId === "unknown", mobileEnabled: config.simulation?.profile !== 'energy' && Boolean(config.mobile.enabled), changedAt: new Date().toISOString() };
+  let controlQueue = Promise.resolve();
+  function enqueue(operation) {
+    const pending = controlQueue.then(operation);
+    controlQueue = pending.catch(() => undefined);
+    return pending;
+  }
+  function controlCommand(command) {
+    return enqueue(async () => {
+      const next = { ...control };
+      const result = applyCommand(command, next);
+      if (command.action === 'profile') await simulationStore.save(config.assetId, next);
+      Object.assign(control, next);
+      if (command.action === 'profile') status.lastSample = null;
+      await publishSampleNow();
+      if (result.scenarioChanged && command.action !== 'profile') await publishStateTransition({ from: result.previousScenario, to: control.scenario });
+      return publicStatus();
+    });
+  }
+  function sampleFor(scenario, step = control.energyStep) {
+    return createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario, profile: control.profile, energy: control.energy, energyStep: step, mobile: { ...config.mobile, enabled: control.mobileEnabled } });
+  }
   const processedCommands = new Map();
   let sequence = 0;
   let timer;
@@ -188,22 +211,28 @@ function createTwinRuntime(config) {
     log("mqtt_connected", { url: config.mqttUrl, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, credentialSource: config.credentialSource });
     void publishSample();
     timer ??= setInterval(() => void publishSample(), config.intervalMs);
-    void client.subscribeAsync(config.commandTopic, { qos: 1 });
+    if (!config.bootstrapDevice) void client.subscribeAsync(config.commandTopic, { qos: 1 });
   });
-  client.on("message", (topic, payload) => void handleCommand(topic, payload));
+  client.on("message", (topic, payload) => void enqueue(() => handleCommand(topic, payload)).catch((error) => log("command_error", { twinId: config.assetId, error: message(error) })));
   client.on("offline", () => { status.connected = false; });
   client.on("close", () => { status.connected = false; });
   client.on("error", (error) => { status.lastError = error.message; log("mqtt_error", { twinId: config.assetId, error: error.message }); });
 
   async function publishSample() {
+    return enqueue(publishSampleNow);
+  }
+
+  async function publishSampleNow() {
     if (!client.connected || publishing || control.paused) return;
     publishing = true;
     try {
       sequence += 1;
-      const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario: control.scenario, mobile: { ...config.mobile, enabled: control.mobileEnabled } });
-      await client.publishAsync(config.topic, JSON.stringify(sample), { qos: config.qos, retain: false });
+      const sample = sampleFor(control.scenario);
+      if (control.profile === 'energy') control.energyStep += 1;
+      await client.publishAsync(config.topic, JSON.stringify(await devicePayload(sample,config.encryptionPassword)), { qos: config.qos, retain: false });
       status.published += 1;
       status.lastPublishedAt = sample.observedAt;
+      if (sample.simulation) status.lastSample = { simulation: sample.simulation, measurements: sample.measurements };
       status.lastError = null;
       log("telemetry_published", { twinId: config.assetId, sequence, topic: config.topic, scenario: control.scenario });
     } catch (error) {
@@ -213,10 +242,11 @@ function createTwinRuntime(config) {
   }
 
   async function publishStateTransition({ from, to }) {
+    if (config.bootstrapDevice) return;
     if (!client.connected) throw new Error("MQTT broker is unavailable");
     sequence += 1;
-    const sample = createTelemetry({ sequence, machineName: config.machineName, assetId: config.assetId, scenario: to, mobile: { ...config.mobile, enabled: control.mobileEnabled } });
-    const transition = { ...sample, transition: { kind: to === "normal" ? "fault-cleared" : "fault-opened", fromScenario: from, toScenario: to, source: "dt-simulator-control", occurredAt: sample.observedAt } };
+    const sample = sampleFor(to, Math.max(0, control.energyStep - 1));
+    const transition = { ...sample, transition: { kind: control.profile === 'energy' ? 'simulation-scenario-changed' : to === "normal" ? "fault-cleared" : "fault-opened", fromScenario: from, toScenario: to, source: "dt-simulator-control", occurredAt: sample.observedAt } };
     await client.publishAsync(config.stateTopic, JSON.stringify(transition), { qos: config.qos, retain: false });
     status.lastTransitionAt = sample.observedAt;
     log("fault_transition_published", { twinId: config.assetId, from, to, topic: config.stateTopic, sequence });
@@ -258,13 +288,13 @@ function createTwinRuntime(config) {
     if (processedCommands.size > 1000) processedCommands.delete(processedCommands.keys().next().value);
   }
   function publicStatus() {
-    return { ...status, scenario: control.scenario, paused: control.paused, changedAt: control.changedAt, machineName: config.machineName, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, network: config.network, credentialSource: config.credentialSource, mobile: control.mobileEnabled };
+    return { ...status, profile: control.profile ?? 'machine', energy: control.energy, scenario: control.scenario, paused: control.paused, changedAt: control.changedAt, machineName: config.machineName, topic: config.topic, twinId: config.assetId, tenantId: config.tenantId, network: config.network, credentialSource: config.credentialSource, mobile: control.mobileEnabled };
   }
   async function stop() {
     if (timer) clearInterval(timer);
     await client.endAsync().catch(() => undefined);
   }
-  return { control, publishSample, publishStateTransition, publicStatus, stop };
+  return { control, controlCommand, publishSample, publishStateTransition, publicStatus, stop };
 }
 
 async function shutdown(signal) {

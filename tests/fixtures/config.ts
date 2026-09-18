@@ -25,7 +25,11 @@ export function testConfig(overrides: TestOverrides = {}): AppConfig {
     idempotency: { provider: "memory", ttlMs: 60_000 },
     dataset: { directory: "./data/test", aggregation: { enabled: true, defaultWindowSeconds: 300, shutdownFlushTimeoutMs: 1_000 } },
     storage: { defaultProvider: "local", providers: { local: { type: "filesystem", basePath: "./data/test", uriPrefix: "file://" } }, routes: {} },
-    retention: { enabled: false, defaultDays: 5, intervalMs: 3_600_000, startupDelayMs: 60_000, maxDeletesPerRun: 500, ownerPolicies: [] },
+    retention: {
+      enabled: false, defaultDays: 5, intervalMs: 3_600_000, startupDelayMs: 60_000,
+      maxDeletesPerRun: 500, ownerPolicies: [],
+      onChainStates: { enabled: false, retentionDays: 30, maxPrunesPerRun: 50 },
+    },
   };
   const localProvider = base.storage.providers.local;
   if (localProvider?.type !== "filesystem") throw new Error("Test local storage must be filesystem");

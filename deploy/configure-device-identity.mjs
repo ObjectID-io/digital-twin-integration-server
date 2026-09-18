@@ -1,0 +1,10 @@
+import {readFile,writeFile,stat,chown,rename} from "node:fs/promises";
+const path="/task-secrets/credentials.json",value=process.env.IDENTITY_PACKAGE_ID;
+if(!/^0x[0-9a-f]{64}$/i.test(value || ""))throw Error("Invalid approved identity package");
+const previous=await stat(path),credentials=JSON.parse(await readFile(path,"utf8"));
+if(credentials.DTIS_IDENTITY_PACKAGE_ID && credentials.DTIS_IDENTITY_PACKAGE_ID!==value)throw Error("Existing identity package differs; manual review required");
+credentials.DTIS_IDENTITY_PACKAGE_ID=value;
+const temporary=path+".device-release.tmp";
+await writeFile(temporary,JSON.stringify(credentials,null,2)+"\n",{mode:previous.mode&0o777,flag:"wx"});
+await chown(temporary,previous.uid,previous.gid);await rename(temporary,path);
+console.log("Approved public identity package configured; other credentials preserved.");

@@ -1,4 +1,5 @@
 node_modules/
+console/did-login.bundle.js
 dist/
 coverage/
 reports/

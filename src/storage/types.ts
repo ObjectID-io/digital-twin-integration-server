@@ -79,4 +79,9 @@ export interface RetentionConfig {
   startupDelayMs: number;
   maxDeletesPerRun: number;
   ownerPolicies: Array<{ ownerDid: string; retentionDays: number | null }>;
+  onChainStates: {
+    enabled: boolean;
+    retentionDays: number;
+    maxPrunesPerRun: number;
+  };
 }

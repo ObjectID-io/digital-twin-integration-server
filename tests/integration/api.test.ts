@@ -5,6 +5,8 @@ import { createApp } from "../../src/api/app.js";
 import { AppError } from "../../src/common/errors.js";
 import { FakeObjectIdAdapter } from "../fixtures/fakeObjectId.js";
 import { testConfig } from "../fixtures/config.js";
+import { TwinService } from "../../src/twin/service.js";
+import { ProfileRegistry } from "../../src/schemas/registry.js";
 
 describe("HTTP integration", () => {
   const dataDirectory = "./data/test-api";
@@ -55,12 +57,12 @@ describe("HTTP integration", () => {
     expect(latest.body).toMatchObject({ twinId: "0xtwin", observedAt: 123, payload, encryption: { encrypted: false } });
   });
 
-  it("exposes only sanitized realtime status for an on-chain public Twin", async () => {
+  it("exposes only sanitized realtime status when public realtime is enabled", async () => {
     const twinId = `0x${"1".repeat(64)}`;
     adapter.twins.set(twinId, {
       data: {
         type: "0xpackage::oid_twin::OIDTwin",
-        content: { fields: { mutable_metadata: JSON.stringify({ objectid: { visibility: "public" } }) } },
+        content: { fields: { mutable_metadata: JSON.stringify({ objectid: { visibility: "public", dataVisibility: "public" } }) } },
       },
     });
     const runtime = createApp(testConfig(), adapter);
@@ -75,8 +77,12 @@ describe("HTTP integration", () => {
     expect(response.body).toEqual({
       available: false,
       connected: false,
+      connectorConnected: false,
       hasData: true,
+      fresh: true,
+      stale: false,
       lastSeenAt: expect.any(String),
+      reason: "CONNECTOR_DISCONNECTED",
     });
     expect(response.text).not.toContain("secret");
     expect(response.text).not.toContain("factory/telemetry");
@@ -227,10 +233,11 @@ describe("HTTP integration", () => {
   });
 
   it("creates an explicit OME Aspect binding and validates it in Twin context", async () => {
-    const app = createApp(testConfig(), adapter).app;
+    const runtime = createApp(testConfig(), adapter);
+    const app = runtime.app;
     const payload = { profile: "objectid-profile://iso23247/ome/v1", twinType: "equipment", name: "Motor 1" };
-    const created = await request(app).post("/api/v1/twins").send({ id: "0xome", ...payload });
-    expect(created.status).toBe(201);
+    // Exercise profile binding below the HTTP ownership gate; subscription-gated creation has its own integration suite.
+    await new TwinService(adapter, new ProfileRegistry("./profiles"), runtime.storage).createProfiledTwin({ id: "0xome", ...payload });
     const aspects = await adapter.getTwinChildren("0xome", "OIDTwinAspect");
     expect(aspects).toContainEqual(expect.objectContaining({ fields: expect.objectContaining({ aspect_code: "iso23247_ome", schema_uri: payload.profile, semantic_ref: "ISO23247:OME" }) }));
     const validation = await request(app).post("/api/v1/twins/0xome/validate-profile").send({ profile: "iso23247-ome-v1", payload });

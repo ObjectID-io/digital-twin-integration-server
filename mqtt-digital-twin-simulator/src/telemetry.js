@@ -1,3 +1,4 @@
+import { createEnergyTelemetry } from './energy.js';
 function round(value, decimals = 2) {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
@@ -7,9 +8,15 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+function normalizeDegrees(value) {
+  return ((value % 360) + 360) % 360;
+}
+
 export const SCENARIOS = ["normal", "overheat", "high-vibration", "spindle-overload", "pressure-loss", "emergency-stop"];
 
-export function createTelemetry({ sequence, machineName, assetId, scenario = "normal", now = Date.now(), random = Math.random, mobile = null }) {
+export function createTelemetry({ sequence, machineName, assetId, scenario = "normal", now = Date.now(), random = Math.random, mobile = null, profile = 'machine', energy, energyStep }) {
+  if (profile === 'energy') return createEnergyTelemetry({ sequence, machineName, assetId, scenario, now, energy, energyStep });
+  if (profile !== 'machine') throw new Error('Unsupported simulation profile');
   const phase = sequence / 12;
   const noise = () => random() - 0.5;
   const temperatureC = clamp(62 + Math.sin(phase) * 7 + noise() * 1.5, 45, 85);
@@ -68,6 +75,6 @@ function simulatedPosition(sequence, mobile) {
     crs: "OGC:CRS84",
     accuracy: { value: 4.5, unit: "m" },
     speed: { value: round(speedKph, 1), unit: "km/h" },
-    heading: { value: round((90 - angle * 180 / Math.PI + 360) % 360, 1), unit: "deg" },
+    heading: { value: normalizeDegrees(round(normalizeDegrees(90 - angle * 180 / Math.PI), 1)), unit: "deg" },
   };
 }

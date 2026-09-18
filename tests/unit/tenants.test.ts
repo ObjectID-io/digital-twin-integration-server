@@ -60,6 +60,9 @@ describe("tenant accounting registry", () => {
     expect(device).toMatchObject({ active: true, version: 1, mqttUsername: "mqtt-device-9", twinId: objectId("9") });
     await expect(dynamic.twinCredentialStatus(accounting.ownerDid, objectId("9"))).resolves.toMatchObject({ active: true, version: 1 });
     await expect(dynamic.authenticateApiKey("external-key")).resolves.toEqual(accounting);
+    await dynamic.revokeExternalCredentials(accounting.ownerDid, false);
+    await expect(dynamic.twinCredentialStatus(accounting.ownerDid, objectId("9"))).resolves.toMatchObject({ active: true, version: 1 });
+    await expect(dynamic.authenticateApiKey("external-key")).rejects.toMatchObject({ code: "AUTH_INVALID_API_KEY" });
     const revoked = await dynamic.revokeExternalCredentials(accounting.ownerDid);
     expect(revoked).toMatchObject({ active: false, version: 1 });
     await expect(dynamic.twinCredentialStatus(accounting.ownerDid, objectId("9"))).resolves.toMatchObject({ active: false, version: 1 });

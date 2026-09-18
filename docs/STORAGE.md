@@ -1,5 +1,13 @@
 # Off-Chain Storage
 
+## Generic encrypted files (v1)
+
+The independent `/api/v1/files` API accepts raw files from authenticated tenant owners,
+encrypts content and metadata with a dedicated AES-256-GCM key, and retrieves original
+bytes by immutable file ID. No Twin or IOTA transaction is required. Files are private,
+limited to 16 MiB, and excluded from telemetry retention. See [FILES.md](FILES.md) for
+authentication, configuration, endpoint contracts, examples, backup and lifecycle limits.
+
 ## Automatic Retention And Pruning
 
 The Integration Server automatically prunes managed objects after five days by default. Only objects inside a configured provider's `twins/{twinId}/{category}` namespace are eligible. External URIs and unscoped objects are never enumerated.
@@ -11,6 +19,10 @@ retention:
   intervalMs: 3600000
   startupDelayMs: 60000
   maxDeletesPerRun: 500
+  onChainStates:
+    enabled: true
+    retentionDays: 30
+    maxPrunesPerRun: 50
   ownerPolicies:
     - ownerDid: did:iota:testnet:0xPREMIUM_OWNER
       retentionDays: 30
@@ -23,6 +35,10 @@ The current on-chain Twin owner is resolved before deletion. If the Twin or owne
 The oldest eligible objects are deleted first, with a bounded number of deletions per run. Status and the most recent result are available from `GET /api/v1/storage/retention/status`.
 
 Pruning removes the off-chain bytes, not the immutable ObjectID/IOTA record. The URI and hash remain as historical integrity evidence, but payload retrieval will return unavailable after retention expires.
+
+On-chain state pruning is a separate, stricter pass. For each `aspectCode` / `sampleType` stream it always retains the newest `OIDTwinState`. An older state is deleted only after its retention window and only when its publication record and payload hash are coherent. The upgraded Move call atomically emits `EVENT_STATE_PRUNED` with the state ID and SHA-256 hash before deleting the state. Digital Thread events are never deleted, so revision continuity and payload verification remain available after the state object disappears. A non-empty publication hash that disagrees with the state fails closed.
+
+The Move package must include the publication-hash and `prune_state_with_receipt` upgrade before enabling this pass. DTIS deliberately calls only this new entry point: an older package rejects the transaction instead of performing an unverifiable deletion. This also lets legacy states whose original publication event had an empty hash be migrated safely. The scheduler uses the Twin's own subscription and limits each run with `maxPrunesPerRun`. Environment overrides are available as `DTIS_ONCHAIN_STATE_PRUNING_ENABLED`, `DTIS_ONCHAIN_STATE_RETENTION_DAYS`, and `DTIS_ONCHAIN_STATE_MAX_PRUNES`.
 
 ## Architecture
 

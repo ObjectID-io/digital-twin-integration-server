@@ -64,13 +64,44 @@ connectors:
     enabled: false
 
 commands:
-  enabled: false
+  enabled: true
   storeFile: /data/commands.json
-  requestTopicTemplate: objectid/twins/{twinId}/commands/request
-  resultTopic: objectid/twins/+/commands/+/result
+  requestTopicTemplate: objectid/mainnet/twins/{twinId}/commands/request
+  resultTopic: objectid/mainnet/twins/+/commands/+/result
   signingKeyFile: /run/secrets/command_signing_key
   signingKeyId: dtis-command-v1
-  catalogs: []
+  catalogs:
+    # Shared simulator profile. Authorization is still evaluated for the
+    # requested Twin and the broker ACL limits delivery to its provisioned
+    # device credential.
+    - twinId: "*"
+      interfaceId: urn:objectid:interface:simulator-control:v1
+      commands:
+        - name: pauseSimulation
+          version: "1.0"
+          description: Pause periodic demo telemetry publication.
+          riskClass: operational
+          timeoutSeconds: 30
+          parametersSchema: { type: object, additionalProperties: false }
+        - name: resumeSimulation
+          version: "1.0"
+          description: Resume periodic demo telemetry publication.
+          riskClass: operational
+          timeoutSeconds: 30
+          parametersSchema: { type: object, additionalProperties: false }
+        - name: setSimulationScenario
+          version: "1.0"
+          description: Select a non-safety demo machine scenario.
+          riskClass: operational
+          timeoutSeconds: 30
+          parametersSchema:
+            type: object
+            required: [scenario]
+            additionalProperties: false
+            properties:
+              scenario:
+                type: string
+                enum: [normal, overheat, high-vibration, spindle-overload, pressure-loss]
 
 security:
   credentialProvider: file
@@ -145,4 +176,8 @@ retention:
   intervalMs: 3600000
   startupDelayMs: 60000
   maxDeletesPerRun: 500
+  onChainStates:
+    enabled: true
+    retentionDays: 30
+    maxPrunesPerRun: 50
   ownerPolicies: []

@@ -9,9 +9,11 @@ const eventId = `0x${"33".repeat(32)}`;
 const packageId = `0x${"44".repeat(32)}`;
 const rawWindow = Buffer.from(JSON.stringify({ twinId, fromTimestamp: 100, toTimestamp: 200, samples: [{ observedAt: 100, value: 21.5 }] }));
 
-function fixture() {
+function fixture({ sourceWindowCount = 1, readDelayMs = 0 } = {}) {
   let evidenceBytes = Buffer.alloc(0);
   let evidenceHash = "";
+  let activeReads = 0;
+  let maxActiveReads = 0;
   const datasets: any[] = [];
   const events: any[] = [];
   const adapter = {
@@ -28,15 +30,20 @@ function fixture() {
     },
   };
   const storage = {
-    listManagedObjects: async () => [{ uri: "s3://raw/window.json", twinId, category: "dataset", createdAt: new Date(200).toISOString(), size: rawWindow.length }],
-    read: async (uri: string) => uri === "s3://raw/window.json" ? rawWindow : evidenceBytes,
+    listManagedObjects: async () => Array.from({ length: sourceWindowCount }, (_, index) => ({ uri: `s3://raw/window-${index}.json`, twinId, category: "dataset", createdAt: new Date(200 + index).toISOString(), size: rawWindow.length })),
+    read: async (uri: string) => {
+      if (!uri.startsWith("s3://raw/")) return evidenceBytes;
+      activeReads += 1; maxActiveReads = Math.max(maxActiveReads, activeReads);
+      try { if (readDelayMs) await new Promise((resolve) => setTimeout(resolve, readDelayMs)); return rawWindow; }
+      finally { activeReads -= 1; }
+    },
     store: async ({ data }: any) => {
       evidenceBytes = Buffer.from(data); evidenceHash = createHash("sha256").update(evidenceBytes).digest("hex");
       return { uri: "s3://evidence/export.json", hash: `sha256:${evidenceHash}`, hashAlgorithm: "sha256", size: evidenceBytes.length, contentType: "application/json" };
     },
   };
   const service = new TwinEvidenceService(adapter as any, storage as any, { objectid: { network: "testnet", packageId } } as any);
-  return { service, getEvidenceBytes: () => evidenceBytes, getEvidenceHash: () => evidenceHash, adapter };
+  return { service, getEvidenceBytes: () => evidenceBytes, getEvidenceHash: () => evidenceHash, getMaxActiveReads: () => maxActiveReads, adapter };
 }
 
 describe("TwinEvidenceService", () => {
@@ -46,6 +53,14 @@ describe("TwinEvidenceService", () => {
     expect(created).toMatchObject({ datasetId, sourceWindowCount: 1, periodFrom: 100, periodTo: 200 });
     await expect(adapter.getDigitalThread()).resolves.toHaveLength(1);
     expect(JSON.parse(getEvidenceBytes().toString())).toMatchObject({ format: "objectid.digital-twin-export-dataset.v1", twinId, sourceWindowCount: 1 });
+  });
+
+  it("reads retained telemetry concurrently with a bounded worker pool", async () => {
+    const { service, getMaxActiveReads } = fixture({ sourceWindowCount: 40, readDelayMs: 5 });
+    const created = await service.createSnapshot(twinId, {});
+    expect(created.sourceWindowCount).toBe(40);
+    expect(getMaxActiveReads()).toBeGreaterThan(1);
+    expect(getMaxActiveReads()).toBeLessThanOrEqual(16);
   });
 
   it("downloads and validates the specific Dataset snapshot", async () => {

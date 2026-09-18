@@ -1,5 +1,18 @@
 # ObjectID MQTT Digital Twin Simulator
 
+## Device-first enrollment
+
+The upload form also accepts `objectid.device-onboarding.v1` exported by the IS
+workbench before an on-chain Twin exists. A bootstrap device publishes only its
+assigned telemetry topic; state transitions and command subscriptions are disabled.
+If the export contains an encryption password, outgoing samples use the IS-compatible
+AES-256-GCM/scrypt envelope. The stored configuration contains secrets and remains in
+the existing private configuration volume; it is never returned by the status API.
+After IS classification, the same device credentials continue working: IS routes
+its samples to the resulting Twin. Existing `objectid.device-provisioning.v1` and
+legacy tenant configuration files remain supported. Custom endpoints require the
+simulator administrator; hosted files are checked against the hosted broker.
+
 Simulates an industrial machine and publishes JSON telemetry to the MQTT broker used by the ObjectID Digital Twin Integration Server.
 
 With dedicated Twin credentials, the dataset topic is read exactly from the downloaded ACL configuration. `objectid/twins/telemetry/dataset` is only the legacy service-account fallback. Samples are emitted every fifteen seconds and aggregated by the integration server into five-minute datasets. This avoids invoking the on-chain state operation, and therefore consuming a subscription operation credit, for every simulated sample.
@@ -21,6 +34,8 @@ docker compose -f docker-compose.yml -f compose.simulator-tenant.yml \
 The simulator reads the MQTT endpoint, one-time password, Twin-scoped username, bound Twin ID and the exact state/dataset/command topics from each file. A device credential can access only its assigned Twin and contains no tenant REST API key. Never commit a downloaded file: it contains live credentials. Older tenant configuration files remain accepted for migration.
 
 Open `https://dt-simulator.objectid.io`, select one or more per-Twin JSON files in **Add simulated Twins** and choose **Add Twin files**. No additional password is required: possession of the one-time device file and successful authentication of its MQTT credential authorize that Twin's self-provisioning. Only files bound to the hosted `dtis.objectid.io` testnet or mainnet MQTT endpoint are accepted through this flow. The server verifies the credential before storing the file separately under `/data/twins` with mode `0600`, then starts or replaces only that Twin runtime. Existing simulations continue without a restart.
+
+After rotating one Twin's device credentials in the Webview, select the same runtime and choose **Update credentials**. The simulator accepts the replacement only when the uploaded file is bound to the selected Twin, verifies the new MQTT login, atomically replaces its protected file and restarts only that runtime. No simulator administration password is required.
 
 Use the Twin selector to inspect and control a simulation. **Enable mobility** starts publishing a dynamic GeoJSON position for the selected asset; **Disable mobility** stops including that dynamic position in subsequent telemetry. The command publishes one sample immediately, affects only the selected Twin and does not change any other runtime. This control is operational rather than persistent: after a simulator restart, mobility returns to the value stored in the Twin configuration or `SIM_MOBILE_ENABLED`.
 
@@ -72,3 +87,15 @@ curl --fail https://dt-simulator.objectid.io/api/status | jq
 ```
 
 Open `https://dt-simulator.objectid.io` to select a simulated Twin, inject CNC fault scenarios and control its telemetry stream. Each scenario transition publishes one state message, producing an on-chain `OIDTwinState` and `EVENT_STATE_PUBLISHED` Digital Thread record through the integration server. Repeated telemetry samples remain in the aggregated dataset and do not consume one subscription operation credit each.
+
+## Energy simulation profile
+
+Select a Twin, choose **Energy — solar and demand**, configure the parameters and click **APPLY PROFILE**. The industrial profile remains available. Use a dedicated energy device with the appropriate measurement mapping in the Integration Server; changing a simulator profile does not change that mapping or the Twin schema.
+
+The energy profile publishes `objectid.telemetry.energy.v1` through the existing scoped MQTT topic and preserves device encryption. Measurements are `solarIrradiance` (W/m2), `pvPower`, `loadPower`, `gridPower`, `gridImportPower`, and `gridExportPower` (kW). Positive grid power means import, negative means export. Grid power equals demand minus PV production. Scenarios: `normal`, `cloudy`, `demand-peak`, `inverter-offline`. Mobility is disabled for energy.
+
+Defaults: 50 kW PV, 20 kW base demand, seed 42, UTC start 2026-06-21 06:00, and 300 simulated seconds per sample. `observedAt` records publication time; `simulation.simulatedAt` records virtual time. The `simulation` object marks data synthetic and records the model version, input parameters and sample index. Identical parameters and scenario sequences reproduce the measurements, independently of publication time. This is a simplified demonstrator, not a calibrated energy forecast or a signed provenance certificate.
+
+Profile and parameters are stored separately from credentials under `<OBJECTID_SIMULATOR_CONFIG_DIR>/simulation-settings/`, one file per Twin. Applying a profile resets its scenario and simulation clock and preserves pause state. A process restart restores parameters but starts a new replay at sample zero and the normal scenario. Scenario changes continue the clock. Profile persistence errors leave the current configuration unchanged.
+
+For classified bootstrap devices, the Integration Server forwards only configured signal mappings; preserving simulation metadata in downstream datasets and adding energy charts to dt-demo require separate integration work. The simulator's energy controls work directly; exposing energy scenarios through the Integration Server command catalog also requires updating that catalog.

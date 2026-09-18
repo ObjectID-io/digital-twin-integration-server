@@ -35,4 +35,19 @@ describe("TwinRealtimeHub", () => {
     });
     expect(event.position).toMatchObject({ type: "Point", coordinates: [9.19, 45.46], speedKph: 50 });
   });
+
+  it("does not report an old snapshot as an available realtime connection", () => {
+    const hub = new TwinRealtimeHub();
+    vi.spyOn(Date, "now").mockReturnValue(1_000);
+    hub.publish({
+      mapping: { topic: "factory/device", twinId: "0xtwin", mode: "dataset", datasetType: "telemetry" },
+      topic: "factory/device", value: { temperature: 42 }, observedAt: 1_000,
+    });
+
+    expect(hub.status("0xtwin", { mqtt: { healthy: true } }, 60_000, 62_000)).toMatchObject({
+      available: false, connected: false, connectorConnected: true, hasData: true,
+      fresh: false, stale: true, reason: "REALTIME_DATA_STALE",
+    });
+    vi.restoreAllMocks();
+  });
 });

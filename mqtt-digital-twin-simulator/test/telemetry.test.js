@@ -43,3 +43,13 @@ test("creates a deterministic CRS84 trajectory for a mobile asset", () => {
   assert.equal(sample.position.crs, "OGC:CRS84");
   assert.equal(sample.position.speed.value, 36);
 });
+
+test("keeps mobile headings inside the realtime validation range", () => {
+  const mobile = { enabled: true, centerLatitude: 45.4642, centerLongitude: 9.19, radiusKm: 1, speedKph: 3600, intervalMs: 1571.494 };
+  const roundingBoundary = createTelemetry({ sequence: 1, machineName: "vehicle-1", assetId: "0xtwin", mobile });
+  const multipleTurns = createTelemetry({ sequence: 1000, machineName: "vehicle-1", assetId: "0xtwin", mobile });
+
+  assert.equal(roundingBoundary.position.heading.value, 0);
+  assert.ok(multipleTurns.position.heading.value >= 0);
+  assert.ok(multipleTurns.position.heading.value < 360);
+});

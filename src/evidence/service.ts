@@ -10,6 +10,7 @@ const BUNDLE_FORMAT = "objectid.digital-twin-evidence-bundle.v2";
 const DATASET_FORMAT = "objectid.digital-twin-export-dataset.v1";
 const DATASET_EVENT = 70;
 const MAX_DATASET_BYTES = 256 * 1024 * 1024;
+const SOURCE_READ_CONCURRENCY = 16;
 
 export interface EvidenceManifestEntry {
   datasetObjectId: string; datasetType: string; storageUri: string; path: string;
@@ -30,9 +31,7 @@ export class TwinEvidenceService {
   async createSnapshot(twinId: string, selection: { fromTimestamp?: number; toTimestamp?: number }, accounting?: AccountingContext) {
     const managed = (await this.storage.listManagedObjects()).filter((item) =>
       item.twinId.toLowerCase() === twinId.toLowerCase() && ["dataset", "datasets"].includes(item.category));
-    const windows: Array<{ sourceUri: string; retainedAt: string; periodFrom: number; periodTo: number; payload: unknown }> = [];
-    let sourceBytes = 0;
-    for (const item of managed) {
+    const candidates = await mapWithConcurrency(managed, SOURCE_READ_CONCURRENCY, async (item) => {
       const bytes = await bufferOf(await this.storage.read(item.uri));
       let payload: any;
       try { payload = JSON.parse(bytes.toString("utf8")); }
@@ -41,11 +40,17 @@ export class TwinEvidenceService {
       const fallback = Number.isSafeInteger(parsedCreatedAt) && parsedCreatedAt >= 0 ? parsedCreatedAt : Date.now();
       const periodFrom = safeTimestamp(payload?.fromTimestamp, fallback);
       const periodTo = safeTimestamp(payload?.toTimestamp, periodFrom);
-      if (overlaps(periodFrom, periodTo, selection)) {
-        sourceBytes += bytes.length;
-        if (sourceBytes > MAX_DATASET_BYTES) throw new AppError("EVIDENCE_SOURCE_TOO_LARGE", `Selected telemetry exceeds ${MAX_DATASET_BYTES} bytes`, 413, "VALIDATION");
-        windows.push({ sourceUri: item.uri, retainedAt: item.createdAt, periodFrom, periodTo, payload });
-      }
+      return overlaps(periodFrom, periodTo, selection)
+        ? { byteLength: bytes.length, window: { sourceUri: item.uri, retainedAt: item.createdAt, periodFrom, periodTo, payload } }
+        : null;
+    });
+    const windows: Array<{ sourceUri: string; retainedAt: string; periodFrom: number; periodTo: number; payload: unknown }> = [];
+    let sourceBytes = 0;
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      sourceBytes += candidate.byteLength;
+      if (sourceBytes > MAX_DATASET_BYTES) throw new AppError("EVIDENCE_SOURCE_TOO_LARGE", `Selected telemetry exceeds ${MAX_DATASET_BYTES} bytes`, 413, "VALIDATION");
+      windows.push(candidate.window);
     }
     windows.sort((left, right) => left.periodFrom - right.periodFrom || left.sourceUri.localeCompare(right.sourceUri));
     if (!windows.length) throw new AppError("EVIDENCE_SOURCE_EMPTY", "No retained telemetry is available for the selected interval", 404, "CONNECTOR");
@@ -271,3 +276,16 @@ function sha256(value: Uint8Array) { return createHash("sha256").update(value).d
 function safeId(value: string) { return value.replace(/[^a-z0-9_-]/gi, "_").slice(0, 80) || "dataset"; }
 function asRecord(value: unknown): Record<string, any> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {}; }
 async function bufferOf(value: Buffer | Readable) { if (Buffer.isBuffer(value)) return value; const chunks: Buffer[] = []; for await (const chunk of value) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); return Buffer.concat(chunks); }
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index]!);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}

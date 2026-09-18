@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import canonicalize from "canonicalize";
 import { SCENARIOS } from "./telemetry.js";
+import { ENERGY_SCENARIOS } from './energy.js';
 
 const UUID_URN = /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -33,6 +34,7 @@ export function executeSimulatorCommand(control, request) {
   validateCatalogCommand(request?.command);
   const name = request.command.name;
   const parameters = request.command.parameters;
+  if (name === 'setSimulationScenario' && !(control.profile === 'energy' ? ENERGY_SCENARIOS : SCENARIOS).includes(parameters.scenario)) fail('COMMAND_PROFILE_MISMATCH', 'Scenario does not match the selected simulation profile');
   if (name === "pauseSimulation") control.paused = true;
   else if (name === "resumeSimulation") control.paused = false;
   else control.scenario = parameters.scenario;
@@ -50,7 +52,7 @@ function validateCatalogCommand(command) {
   }
   if (command.name !== "setSimulationScenario") fail("COMMAND_NOT_SUPPORTED", "Unsupported simulator command");
   if (Object.keys(parameters).length !== 1 || typeof parameters.scenario !== "string") fail("COMMAND_PARAMETERS_INVALID", "setSimulationScenario requires only the scenario parameter");
-  if (!SCENARIOS.includes(parameters.scenario) || parameters.scenario === "emergency-stop") fail("COMMAND_SAFETY_REJECTED", "Scenario is not allowed through the operational command channel");
+  if (![...SCENARIOS, ...ENERGY_SCENARIOS].includes(parameters.scenario) || parameters.scenario === "emergency-stop") fail("COMMAND_SAFETY_REJECTED", "Scenario is not allowed through the operational command channel");
 }
 
 function verifyAuthorization(unsigned, authorization, signingKey, signingKeyId) {

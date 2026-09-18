@@ -6,6 +6,7 @@ export const logger = pino({
     paths: [
       "req.headers.authorization",
       "req.headers.x-api-key",
+      "req.headers.x-twinscope-creation",
       "password",
       "privateKey",
       "private_key",

@@ -6,7 +6,7 @@ import type { TwinEvent } from "../objectid/types.js";
 export const DIGITAL_THREAD_VERIFIER_VERSION = "1.1.0";
 export const AUDIT_REPORT_FORMAT_VERSION = "1.0";
 export const VALID_TWIN_EVENT_TYPES = new Set([
-  1, 2, 3, 10, 20, 21, 22, 30, 31, 40, 41, 42, 45, 46, 50, 51, 52,
+  1, 2, 3, 10, 20, 21, 22, 30, 31, 32, 40, 41, 42, 45, 46, 50, 51, 52,
   60, 61, 62, 70, 71, 72, 80, 81, 82, 100, 101, 102, 103, 104, 110,
   120, 121, 130, 140, 150, 151, 152, 153, 154, 160, 161, 162, 163, 164,
   170, 171, 172, 180, 181,
@@ -72,7 +72,10 @@ export class IncrementalThreadVerifier {
         if (event.revisionBefore > expectedBefore) this.result.missingRevisions.push(...range(expectedBefore + 1, event.revisionBefore + 1));
       }
       if (event.payloadHash && !isValidHash(event.payloadHash)) this.result.hashErrors.push({ eventId: event.eventId, error: "payloadHash must be sha256:<64 lowercase hex> or 0x<64 hex>" });
-      if ([30, 70, 80, 160, 162].includes(event.eventType) && !event.payloadRef && !event.payloadHash) eventErrors.push("payload reference or hash is required");
+      if (event.eventType === 30 && event.referencedState && !hashesMatch(event.payloadHash, event.referencedState.payloadHash)) {
+        this.result.hashErrors.push({ eventId: event.eventId, error: "referenced state payloadHash does not match the immutable publication event" });
+      }
+      if ([30, 32, 70, 80, 160, 162].includes(event.eventType) && !event.payloadRef && !event.payloadHash) eventErrors.push("payload reference or hash is required");
       if (eventErrors.length) this.result.invalidEvents.push({ eventId: event.eventId, errors: eventErrors });
       await this.verifyTransaction(event, transactionExists);
       this.digest.update(eventEvidenceHash(event));
@@ -140,7 +143,10 @@ function verifyEventsSynchronously(twinId: string, events: TwinEvent[]) {
       if (event.revisionBefore > expected) result.missingRevisions.push(...range(expected + 1, event.revisionBefore + 1));
     }
     if (event.payloadHash && !isValidHash(event.payloadHash)) result.hashErrors.push({ eventId: event.eventId, error: "payloadHash must be sha256:<64 lowercase hex> or 0x<64 hex>" });
-    if ([30, 70, 80, 160, 162].includes(event.eventType) && !event.payloadRef && !event.payloadHash) errors.push("payload reference or hash is required");
+    if (event.eventType === 30 && event.referencedState && !hashesMatch(event.payloadHash, event.referencedState.payloadHash)) {
+      result.hashErrors.push({ eventId: event.eventId, error: "referenced state payloadHash does not match the immutable publication event" });
+    }
+    if ([30, 32, 70, 80, 160, 162].includes(event.eventType) && !event.payloadRef && !event.payloadHash) errors.push("payload reference or hash is required");
     if (errors.length) result.invalidEvents.push({ eventId: event.eventId, errors });
     result.transactionVerification.notVerified += 1; digest.update(eventEvidenceHash(event)); result.eventCount += 1;
     result.firstRevision ||= event.revisionAfter; result.lastRevision = event.revisionAfter; previous = event;
@@ -180,5 +186,9 @@ function transactionStatus(value: { verified: number; failed: number; notVerifie
 }
 function compareEvents(a: TwinEvent, b: TwinEvent) { return a.revisionAfter - b.revisionAfter || a.createdAt - b.createdAt || a.eventId.localeCompare(b.eventId); }
 function isValidHash(value: string) { return /^(sha256:|0x)[0-9a-f]{64}$/.test(value); }
+function hashesMatch(left: string, right: string) {
+  const digest = (value: string) => value.toLowerCase().replace(/^(sha256:|0x)/, "");
+  return Boolean(left && right) && digest(left) === digest(right);
+}
 function range(start: number, end: number) { return start < end ? Array.from({ length: end - start }, (_, index) => start + index) : []; }
 function normalize(value: string) { return value.toLowerCase().replace(/^0x0+/, "0x"); }

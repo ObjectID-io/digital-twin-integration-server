@@ -4,6 +4,7 @@ COPY package*.json ./
 RUN npm ci
 COPY tsconfig*.json eslint.config.js ./
 COPY src ./src
+COPY console ./console
 RUN npm run build && npm prune --omit=dev
 
 FROM node:20-alpine AS runtime
@@ -14,7 +15,7 @@ RUN addgroup -S objectid && adduser -S -G objectid objectid && apk add --no-cach
 COPY LICENSE ./LICENSE
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY console ./console
+COPY --from=build /app/console ./console
 COPY profiles /profiles
 COPY config/config.example.yaml /config/config.yaml
 RUN mkdir -p /secrets /data && chown -R objectid:objectid /app /config /profiles /secrets /data

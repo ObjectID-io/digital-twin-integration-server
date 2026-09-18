@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ObjectID · Tenant access</title>
+<link rel="stylesheet" href="console-assets/status.css"><link rel="stylesheet" href="console-assets/devices.css?v=tenant1">
+<script type="module" src="console-assets/did-login.bundle.js?v=tenant1"></script><script defer src="console-assets/tenant.js"></script></head>
+<body data-home="true" class="twins-page"><header class="topbar"><a class="brand" href="./">OID:: ObjectID</a><nav aria-label="Navigation"><a href="./">IS STATUS</a><a id="my-twins-link" href="tenant" hidden>TENANT ACCESS</a><button id="open-login" type="button">SIGN IN</button><button id="disconnect" hidden>SIGN OUT</button></nav></header>
+<main><section class="hero"><p class="eyebrow">INTEGRATION SERVER</p><h1>Tenant access.</h1><p>Manage application credentials for your DID's tenant. Device setup, data mapping and Twin creation are available in DT. Subscription activation, renewal and purchase remain exclusively in DT.</p><a id="open-dt" href="https://dt-demo.objectid.io/" rel="noopener noreferrer">OPEN DT ↗</a></section>
+<section id="tenant-workspace" class="content-section" hidden><h2>Application credentials</h2><p id="tenant-status" role="status"></p><div class="twin-toolbar"><button id="tenant-rotate" type="button" disabled>GENERATE / ROTATE & DOWNLOAD JSON</button><button id="tenant-revoke" type="button" disabled>REVOKE ACCESS</button></div><p>Rotation or revocation invalidates the previous tenant application credentials. Update applications that use them. Device credentials and the IS signing seed are separate.</p><p>The downloaded JSON contains secrets. Store it securely. Existing secrets cannot be recovered.</p></section></main>
+<section id="module-workspace" class="content-section" hidden><p class="eyebrow">TENANT CONTROLS</p><h2>Functional modules</h2><p>Changes affect only your tenant and survive server restarts. Shared ingestion, storage and security remain active.</p><div id="module-list"></div><p id="module-message" role="status"></p><p>Pausing AI stops new analyses and cancels pending requests locally. Data already sent to a provider cannot be recalled. Resuming uses the existing server-approved fields and provider; it does not grant new data access.</p></section>
+<dialog id="login-dialog" aria-labelledby="login-title"><button id="close-login" type="button" aria-label="Close sign-in dialog">×</button><section id="login-section"><p class="eyebrow">LOCAL SIGNATURE · ON-CHAIN VERIFICATION</p><h2 id="login-title">Sign in to the Integration Server</h2>
+<p>Your seed signs a one-time challenge in your browser: it is never sent to or stored on the server. The IS signing identity remains separate from yours.</p>
+<form id="did-login" autocomplete="on"><label>IOTA DID<input id="login-did" type="text" name="did" autocapitalize="none" required autocomplete="username" spellcheck="false"></label>
+<label>Identity seed<input id="login-seed" name="seed" type="password" autocomplete="current-password" spellcheck="false"></label>
+<label>Or import an encrypted recovery file<input name="recovery" type="file" accept=".json,application/json"></label>
+<label>Recovery file password<input name="recoveryPassword" type="password" autocomplete="off"></label>
+<button id="sign-in-submit" type="submit">SIGN AND SIGN IN</button><p id="login-message" role="status"></p></form></section></dialog>
+<section class="content-section" id="identity-section" hidden><h2>Your access</h2><p id="identity-info"></p><p id="subscription-info"></p><a id="subscription-link" rel="noopener noreferrer" target="_blank">Manage identity and subscription in DT ↗</a></section>
+
+</body></html>

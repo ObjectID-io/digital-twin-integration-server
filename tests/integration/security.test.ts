@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/api/app.js";
 import { FakeObjectIdAdapter } from "../fixtures/fakeObjectId.js";
@@ -38,14 +38,35 @@ describe("HTTP security", () => {
     expect((await request(app).get(`/api/v1/twins/${objectId("2")}`).set("x-api-key", "tenant-a-secret")).status).toBe(200);
     expect((await request(app).get(`/api/v1/twins/${objectId("3")}`).set("x-api-key", "tenant-a-secret")).status).toBe(403);
   });
+  it("caches connector Twin authorization instead of reading IOTA for every MQTT sample", async () => {
+    const objectId = (digit: string) => `0x${digit.repeat(64)}`;
+    process.env.CUSTOMER_A_KEY = "tenant-a-secret";
+    process.env.DTIS_TENANTS_JSON = JSON.stringify({ tenants: [{
+      tenantId: "tenant-a", customerId: "customer-a", ownerDid: `did:iota:testnet:${objectId("a")}`,
+      subscriptionId: objectId("1"), apiKeyCredential: "CUSTOMER_A_KEY",
+    }] });
+    const adapter = new FakeObjectIdAdapter();
+    const twinId = objectId("2");
+    adapter.twins.set(twinId, { id: twinId, subscription_id: objectId("1") });
+    const getTwin = vi.spyOn(adapter, "getTwin");
+    const runtime = createApp(testConfig(), adapter);
+    const mapping = { topic: "factory/device", twinId, tenantId: "tenant-a", mode: "dataset" as const, datasetType: "telemetry" };
+
+    await runtime.ingestMqttMessage({ mapping, topic: mapping.topic, value: { temperature: 40 }, observedAt: 100 });
+    await runtime.ingestMqttMessage({ mapping, topic: mapping.topic, value: { temperature: 41 }, observedAt: 200 });
+
+    expect(getTwin).toHaveBeenCalledTimes(1);
+  });
   it("rejects oversized payloads", async () => {
     const app = createApp(testConfig({ server: { ...testConfig().server, bodyLimitBytes: 1024 } }), new FakeObjectIdAdapter()).app;
     const response = await request(app).post("/api/v1/twins").send({ data: "x".repeat(2048) });
     expect(response.status).toBe(413);
   });
-  it("rejects invalid OME schema", async () => {
+  it("reports invalid OME schema through the validation API", async () => {
     const app = createApp(testConfig(), new FakeObjectIdAdapter()).app;
-    const response = await request(app).post("/api/v1/twins").send({ profile: "objectid-profile://iso23247/ome/v1", name: "invalid" });
-    expect(response.status).toBe(422);
+    const response = await request(app).post("/api/v1/profiles/iso23247-ome-v1/validate").send({ profile: "objectid-profile://iso23247/ome/v1", name: "invalid" });
+    expect(response.status).toBe(200);
+    expect(response.body.valid).toBe(false);
+    expect(response.body.errors.length).toBeGreaterThan(0);
   });
 });

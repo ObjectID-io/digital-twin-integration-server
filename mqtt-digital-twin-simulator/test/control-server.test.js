@@ -97,6 +97,24 @@ test("self-provisions a hosted Twin device file without the simulator administra
   assert.deepEqual(options, { verifyCredential: true });
 });
 
+test("updates credentials only when the uploaded device file matches the selected Twin", async (context) => {
+  const calls = [];
+  const server = createControlServer({
+    status: { connected: true }, control: { scenario: "normal", paused: false }, port: 0,
+    installIntegrationConfig: async (value, options) => { calls.push({ value, options }); return { installed: 1, twins: [{ twinId: hostedTwinId }] }; },
+  });
+  context.after(() => server.close());
+  await once(server, "listening");
+  const baseUrl = `http://127.0.0.1:${server.address().port}/api/integration`;
+  const mismatched = await fetch(`${baseUrl}/0x${"c".repeat(64)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(hostedDeviceFile) });
+  assert.equal(mismatched.status, 409);
+  assert.match((await mismatched.json()).error, /different Twin/);
+  const updated = await fetch(`${baseUrl}/${hostedTwinId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(hostedDeviceFile) });
+  assert.equal(updated.status, 200);
+  assert.equal((await updated.json()).updated, true);
+  assert.deepEqual(calls, [{ value: hostedDeviceFile, options: { verifyCredential: true } }]);
+});
+
 test("rejects self-provisioning files that do not bind a hosted endpoint and exact Twin topics", () => {
   assert.equal(isHostedDeviceProvisioning(hostedDeviceFile), true);
   assert.equal(isHostedDeviceProvisioning({ ...hostedDeviceFile, mqtt: { ...hostedDeviceFile.mqtt, endpoint: "wss://private.example/mqtt-mainnet" } }), false);

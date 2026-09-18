@@ -9,6 +9,18 @@ const event = () => new TwinRealtimeHub().publish({ mapping: { twinId: "twin-a",
 const response = () => new Response(JSON.stringify({ summary: "Temperature is 42.", limitations: "One sample; no trend established." }));
 
 describe("AI analysis connector", () => {
+  it("pauses in-flight analysis and resumes without accepting late results", async () => {
+    let finish!: (r: Response) => void;
+    const fetcher = vi.fn().mockImplementation(() => new Promise<Response>(resolve => { finish = resolve; }));
+    const ai = new AiAnalysisConnector(fetcher); await ai.connect(config);
+    ai.observe("tenant-a", event()); ai.setTenantEnabled("tenant-a", false);
+    expect(fetcher.mock.calls[0]![1].signal.aborted).toBe(true);
+    finish(response()); await new Promise(resolve => setTimeout(resolve, 10));
+    expect(ai.latest("twin-a")).toBeNull();
+    ai.observe("tenant-a", event()); expect(fetcher).toHaveBeenCalledTimes(1);
+    ai.setTenantEnabled("tenant-a", true); ai.observe("tenant-a", event());
+    expect(fetcher).toHaveBeenCalledTimes(2); finish(response()); await ai.disconnect();
+  });
   it("is inert before opt-in and rejects invalid configuration", async () => {
     const fetcher = vi.fn(); const ai = new AiAnalysisConnector(fetcher);
     ai.observe("tenant-a", event()); expect(fetcher).not.toHaveBeenCalled();

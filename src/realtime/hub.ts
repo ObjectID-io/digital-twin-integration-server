@@ -18,6 +18,17 @@ export interface TwinRealtimeEvent {
   encryption: RealtimeEncryptionMetadata;
 }
 
+export interface TwinRealtimeStatus {
+  available: boolean;
+  connected: boolean;
+  connectorConnected: boolean;
+  hasData: boolean;
+  fresh: boolean;
+  stale: boolean;
+  lastSeenAt: string | null;
+  reason: "REALTIME_AVAILABLE" | "NO_REALTIME_DATA" | "REALTIME_DATA_STALE" | "CONNECTOR_DISCONNECTED";
+}
+
 type Subscriber = (event: TwinRealtimeEvent) => void;
 
 export class TwinRealtimeHub {
@@ -45,6 +56,31 @@ export class TwinRealtimeHub {
   }
 
   latest(twinId: string) { return this.latestEvents.get(twinId); }
+
+  status(twinId: string, connectorHealth: Record<string, { healthy?: boolean }>, staleAfterMs: number, now = Date.now()): TwinRealtimeStatus {
+    const latest = this.latest(twinId);
+    const sourceType = latest?.source.type;
+    const connectorConnected = sourceType
+      ? connectorHealth[sourceType]?.healthy === true
+      : ["mqtt", "opcua"].some((type) => connectorHealth[type]?.healthy === true);
+    const fresh = Boolean(latest && now - latest.receivedAt <= staleAfterMs);
+    const connected = connectorConnected && fresh;
+    const reason = connected
+      ? "REALTIME_AVAILABLE"
+      : !latest ? "NO_REALTIME_DATA"
+        : !fresh ? "REALTIME_DATA_STALE"
+          : "CONNECTOR_DISCONNECTED";
+    return {
+      available: connected,
+      connected,
+      connectorConnected,
+      hasData: Boolean(latest),
+      fresh,
+      stale: Boolean(latest) && !fresh,
+      lastSeenAt: latest ? new Date(latest.receivedAt).toISOString() : null,
+      reason,
+    };
+  }
 
   subscribe(twinId: string, subscriber: Subscriber) {
     const current = this.subscribers.get(twinId) ?? new Set<Subscriber>();

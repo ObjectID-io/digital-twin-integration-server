@@ -29,7 +29,11 @@ const defaults: AppConfig = {
     providers: { local: { type: "filesystem", basePath: "./data", uriPrefix: "file://", createDirectories: true, writable: true } },
     routes: {},
   },
-  retention: { enabled: true, defaultDays: 5, intervalMs: 3_600_000, startupDelayMs: 60_000, maxDeletesPerRun: 500, ownerPolicies: [] },
+  retention: {
+    enabled: true, defaultDays: 5, intervalMs: 3_600_000, startupDelayMs: 60_000,
+    maxDeletesPerRun: 500, ownerPolicies: [],
+    onChainStates: { enabled: true, retentionDays: 30, maxPrunesPerRun: 50 },
+  },
 };
 
 function merge<T extends Record<string, any>>(base: T, override: Partial<T>): T {
@@ -52,6 +56,8 @@ function applyEnvironment(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig 
   if (env.DTIS_BODY_LIMIT_BYTES) next.server.bodyLimitBytes = Number(env.DTIS_BODY_LIMIT_BYTES);
   if (env.DTIS_OBJECTID_NETWORK) next.objectid.network = env.DTIS_OBJECTID_NETWORK;
   if (env.DTIS_OBJECTID_RPC_URL) next.objectid.rpcUrl = env.DTIS_OBJECTID_RPC_URL;
+  if (env.DTIS_OBJECTID_EXECUTION_PACKAGE_ID) next.objectid.executionPackageId = env.DTIS_OBJECTID_EXECUTION_PACKAGE_ID;
+  if (env.DTIS_OBJECTID_ACCESS_PACKAGE_ID) next.objectid.accessPackageId = env.DTIS_OBJECTID_ACCESS_PACKAGE_ID;
   if (env.DTIS_OBJECTID_PACKAGE_ID) next.objectid.packageId = env.DTIS_OBJECTID_PACKAGE_ID;
   if (env.DTIS_SUBSCRIPTION_ACCOUNT_ID && next.objectid.signer) next.objectid.signer.subscriptionCredential = "DTIS_SUBSCRIPTION_ACCOUNT_ID";
   if (next.objectid.signer?.gasStations) {
@@ -98,6 +104,9 @@ function applyEnvironment(config: AppConfig, env: NodeJS.ProcessEnv): AppConfig 
   if (env.DTIS_RETENTION_ENABLED) next.retention.enabled = env.DTIS_RETENTION_ENABLED === "true";
   if (env.DTIS_RETENTION_DEFAULT_DAYS) next.retention.defaultDays = Number(env.DTIS_RETENTION_DEFAULT_DAYS);
   if (env.DTIS_RETENTION_INTERVAL_MS) next.retention.intervalMs = Number(env.DTIS_RETENTION_INTERVAL_MS);
+  if (env.DTIS_ONCHAIN_STATE_PRUNING_ENABLED) next.retention.onChainStates.enabled = env.DTIS_ONCHAIN_STATE_PRUNING_ENABLED === "true";
+  if (env.DTIS_ONCHAIN_STATE_RETENTION_DAYS) next.retention.onChainStates.retentionDays = Number(env.DTIS_ONCHAIN_STATE_RETENTION_DAYS);
+  if (env.DTIS_ONCHAIN_STATE_MAX_PRUNES) next.retention.onChainStates.maxPrunesPerRun = Number(env.DTIS_ONCHAIN_STATE_MAX_PRUNES);
   if (env.DTIS_CACHE_TYPE) next.cache.type = env.DTIS_CACHE_TYPE as AppConfig["cache"]["type"];
   if (env.DTIS_CACHE_TTL_MS) next.cache.ttlMs = Number(env.DTIS_CACHE_TTL_MS);
   if (env.DTIS_CACHE_REDIS_URL) next.cache.redisUrl = env.DTIS_CACHE_REDIS_URL;
@@ -181,6 +190,12 @@ export async function loadConfig(path = process.env.DTIS_CONFIG ?? "./config/con
   }
   if (!Number.isInteger(config.retention.maxDeletesPerRun) || config.retention.maxDeletesPerRun < 1) {
     throw new AppError("CONFIG_RETENTION_BATCH_INVALID", "retention.maxDeletesPerRun must be at least one", 500, "VALIDATION");
+  }
+  if (!Number.isFinite(config.retention.onChainStates.retentionDays) || config.retention.onChainStates.retentionDays < 1) {
+    throw new AppError("CONFIG_ONCHAIN_STATE_RETENTION_DAYS_INVALID", "retention.onChainStates.retentionDays must be at least one day", 500, "VALIDATION");
+  }
+  if (!Number.isInteger(config.retention.onChainStates.maxPrunesPerRun) || config.retention.onChainStates.maxPrunesPerRun < 1) {
+    throw new AppError("CONFIG_ONCHAIN_STATE_RETENTION_BATCH_INVALID", "retention.onChainStates.maxPrunesPerRun must be at least one", 500, "VALIDATION");
   }
   for (const policy of config.retention.ownerPolicies) {
     if (!policy.ownerDid || (policy.retentionDays !== null && (!Number.isFinite(policy.retentionDays) || policy.retentionDays < 1))) throw new AppError("CONFIG_RETENTION_OWNER_POLICY_INVALID", "Owner retention policies require an ownerDid and retentionDays >= 1 or null", 500, "VALIDATION");

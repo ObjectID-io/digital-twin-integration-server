@@ -1,3 +1,6 @@
+import { filePaths } from "../files/openapi.js";
+import { devicePaths } from "../devices/openapi.js";
+import { sharingPaths } from "../sharing/openapi.js";
 export const openApiDocument = {
   openapi: "3.0.3",
   info: { title: "ObjectID Digital Twin Integration Server", version: "0.1.0", description: "Stateless on-premise integration and interoperability layer for ObjectID Digital Twins." },
@@ -5,13 +8,18 @@ export const openApiDocument = {
   components: {
     securitySchemes: {
       ApiKey: { type: "apiKey", in: "header", name: "x-api-key" },
+      TwinReadSession: { type: "http", scheme: "bearer", description: "Opaque Twin-scoped DID session returned by shared/twins/{id}/verify. Not a tenant API key or JWT." },
       Bearer: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+      TwinScopeCreation: { type: "apiKey", in: "header", name: "x-twinscope-creation", description: "Trusted TwinScope backend assertion, audience dtis-twin-create, bound to body, plant/node scope and Idempotency-Key. Not a general API key." },
     },
     schemas: {
       Error: { type: "object", properties: { error: { type: "object", required: ["code", "message", "category"], properties: { code: { type: "string" }, message: { type: "string" }, category: { type: "string" }, details: { type: "object" } } } } },
     },
   },
   paths: {
+    ...filePaths,
+    ...devicePaths,
+    ...sharingPaths,
     "/health": { get: { summary: "Liveness", responses: { "200": { description: "Alive" } } } },
     "/ready": { get: { summary: "ObjectID and required dependency readiness", responses: { "200": { description: "Ready" }, "503": { description: "Not ready" } } } },
     "/status.json": { get: { summary: "Sanitized public DTIS service status and aggregate metrics", responses: { "200": { description: "Public operations status" } } } },
@@ -37,7 +45,8 @@ export const openApiDocument = {
     },
     "/api/v1/twins/{id}/commands/{commandId}": { get: { summary: "Get command status", responses: { "200": { description: "Command record" }, "404": { description: "Command not found" } } } },
     "/api/v1/dids/{did}/twins": { get: { summary: "List Twins associated with a DID", responses: { "200": { description: "Twin summaries and DID roles" } } } },
-    "/api/v1/twins": { post: { summary: "Create Twin", parameters: [{ name: "Idempotency-Key", in: "header", schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } }, responses: { "201": { description: "Created" } } } },
+    "/api/v1/twins": { post: { summary: "Create a personal Twin with the authenticated owner's subscription", description: "Requires the subscription owner. DTIS creates/reuses a private owner-isolated personal plant when plantId is omitted; organizational tenantId is null. The owner subscription must be active with Twin capacity and credits.", parameters: [{ name: "Idempotency-Key", in: "header", schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } }, responses: { "201": { description: "Created, including twinId, plantId, ownerDid, requesterDid and tenantId" }, "402": { description: "Subscription inactive or exhausted" }, "403": { description: "Not the subscription or plant owner" } } } },
+    "/api/plants/twins": { post: { summary: "Create a plant-owned Twin after delegated TwinScope AAA authorization", security: [{ TwinScopeCreation: [] }], parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string" } }], requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["plantId", "nodeId", "name"], properties: { plantId: { type: "string" }, nodeId: { type: "string" }, name: { type: "string" } } } } } }, responses: { "201": { description: "Created for the pinned plant owner's subscription; requester tracked separately" }, "401": { description: "Missing or invalid scoped assertion" }, "402": { description: "Plant owner subscription unavailable or exhausted" }, "403": { description: "Scope or owner mismatch" }, "404": { description: "Plant or node not present on this IS" }, "409": { description: "Node already bound or idempotency conflict" } } } },
     "/api/v1/twins/{id}/states": { post: { summary: "Publish Twin state (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
     "/api/v1/twins/{id}/datasets": { post: { summary: "Register Twin dataset (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },
     "/api/v1/twins/{id}/models": { post: { summary: "Register Twin model (policy enforced)", responses: { "202": { description: "Submitted" }, "403": { description: "Twin policy denied" } } } },

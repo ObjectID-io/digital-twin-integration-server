@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { onboardingConfig } from "./device-onboarding.js";
+import { simulationSettings } from './energy.js';
 
 export async function loadSimulatorConfig(env = process.env, read = readFile) {
   const integrationFile = pick(env.OBJECTID_INTEGRATION_CONFIG_FILE);
@@ -27,6 +29,9 @@ async function buildSimulatorConfig(integration, env, read) {
     ? String(await read(passwordFile, "utf8")).trimEnd()
     : pick(env.SIM_MQTT_PASSWORD, integration?.mqtt?.password, env.MQTT_PASSWORD);
   const config = {
+    simulation: simulationSettings(integration?.simulation),
+    bootstrapDevice: Boolean(integration?.bootstrapDevice),
+    encryptionPassword: integration?.encryption?.password,
     mqttUrl: pick(env.SIM_MQTT_URL, integration?.mqtt?.endpoint, env.MQTT_URL, "mqtt://mosquitto:1883"),
     username: pick(env.SIM_MQTT_USERNAME, integration?.mqtt?.username, env.MQTT_USERNAME, "objectid"),
     password,
@@ -57,6 +62,7 @@ async function buildSimulatorConfig(integration, env, read) {
   };
   config.commandTopic = pick(env.SIM_COMMAND_TOPIC_OVERRIDE, topicSet?.commandRequests, env.SIM_COMMAND_TOPIC, `${topicPrefix}/twins/${config.assetId}/commands/request`);
   config.commandResultsTopic = pick(topicSet?.commandResults, `${topicPrefix}/twins/${config.assetId}/commands/+/result`);
+  if(config.bootstrapDevice) { config.commandTopic=""; config.commandResultsTopic=""; config.stateTopic=""; }
   validate(config, Boolean(integration));
   return config;
 }
@@ -65,6 +71,8 @@ export function parseIntegrationConfig(raw) {
   let value;
   try { value = JSON.parse(String(raw)); }
   catch { throw new Error("ObjectID integration configuration file is not valid JSON"); }
+  const onboarding = onboardingConfig(value);
+  if (onboarding) return onboarding;
   if (!value || typeof value !== "object" || !value.mqtt || !value.objectid) throw new Error("ObjectID integration configuration must contain objectid and mqtt sections");
   if (value.specVersion === "objectid.device-provisioning.v1") {
     if (!validTwinId(value.twin?.id) || !value.mqtt.topics || Array.isArray(value.mqtt.topics)) {
@@ -84,6 +92,8 @@ export function parseIntegrationConfig(raw) {
 }
 
 export function validateIntegrationConfig(value) {
+  const onboarding = onboardingConfig(value);
+  if (onboarding) return onboarding;
   const parsed = parseIntegrationConfig(JSON.stringify(value));
   if (!/^[a-z0-9_-]{1,96}$/i.test(String(parsed.objectid.tenantId ?? ""))) throw new Error("Integration configuration contains an invalid tenant ID");
   if (parsed.objectid.network !== undefined && !["testnet", "mainnet"].includes(String(parsed.objectid.network))) throw new Error("Integration configuration contains an invalid IOTA network");
@@ -101,8 +111,8 @@ function validate(config, hasIntegration) {
   if (!/^(mqtt|mqtts|ws|wss):\/\//i.test(config.mqttUrl)) throw new Error("MQTT_URL must use mqtt, mqtts, ws or wss");
   if (!["testnet", "mainnet"].includes(config.network)) throw new Error("IOTA network must be testnet or mainnet");
   if (!config.username || !config.password) throw new Error(`MQTT credentials are missing${hasIntegration ? " from the integration configuration" : ""}`);
-  if (!validTwinId(config.assetId) && config.assetId !== "unknown") throw new Error("SIM_ASSET_ID must be a valid ObjectID Twin ID");
-  if (hasIntegration && !validTwinId(config.assetId)) throw new Error("The integration configuration does not contain a usable Twin ID");
+  if (!config.bootstrapDevice && !validTwinId(config.assetId) && config.assetId !== "unknown") throw new Error("SIM_ASSET_ID must be a valid ObjectID Twin ID");
+  if (hasIntegration && !config.bootstrapDevice && !validTwinId(config.assetId)) throw new Error("The integration configuration does not contain a usable Twin ID");
 }
 
 function validTwinId(value) { return /^0x[0-9a-f]{64}$/i.test(String(value)); }

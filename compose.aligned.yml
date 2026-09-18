@@ -1,0 +1,7 @@
+# Use this override last for both networks. Retention is an environment setting.
+services:
+  digital-twin-integration-server:
+    image: objectid/digital-twin-integration-server:signed-datasets-20260917
+    environment:
+      DTIS_COMMANDS_ENABLED: "true"
+      DTIS_RETENTION_DEFAULT_DAYS: "${DTIS_RETENTION_DEFAULT_DAYS:-30}"

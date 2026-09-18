@@ -3,7 +3,7 @@ import { getFullnodeUrl, IotaClient } from "@iota/iota-sdk/client";
 import { AppError, mapObjectIdError } from "../common/errors.js";
 import type { AppConfig } from "../config/types.js";
 import type { CredentialProvider } from "../security/credentials.js";
-import type { AccountingContext, DidTwinSummary, IdentifierLookupResult, ObjectIdAdapter, TwinEvent, TwinRoleGrant, TwinStateEvidence } from "./types.js";
+import type { AccountingContext, DidTwinSummary, IdentifierLookupResult, ObjectIdAdapter, TwinEvent, TwinRoleGrant, TwinStateEvidence, TwinStateRetentionSnapshot } from "./types.js";
 import { IotaStatePublisher } from "./iotaStatePublisher.js";
 
 const require = createRequire(import.meta.url);
@@ -44,7 +44,14 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
     try { await this.oid.session.config(this.config.objectid.network); return true; } catch { return false; }
   }
 
-  async getTwin(id: string) { return this.oid.getObject(id, this.config.objectid.network); }
+  async getTwin(id: string) {
+    const raw = await this.oid.getObject(id, this.config.objectid.network);
+    const type = raw?.data?.type ?? raw?.data?.content?.type ?? raw?.content?.type ?? raw?.type;
+    if (type !== `${this.config.objectid.packageId}::oid_twin::OIDTwin`) {
+      throw new AppError("OBJECTID_TWIN_PACKAGE_MISMATCH", "Twin is not available in the configured package. Legacy Twins must be recreated.", 404, "OBJECTID");
+    }
+    return raw;
+  }
 
   async findTwinsByDid(did: string): Promise<DidTwinSummary[]> {
     if (!this.config.objectid.packageId) throw new AppError("OBJECTID_PACKAGE_ID_MISSING", "objectid.packageId is required", 503, "OBJECTID");
@@ -103,6 +110,15 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
       ? this.statePublisher.publishState(twinId, asRecord(input), accounting)
       : this.mutate("publishState", { twinId, ...asRecord(input) });
   }
+  deleteTwinEvents(id: string, accounting?: AccountingContext) {
+    if (!this.statePublisher) throw new AppError("OBJECTID_CLEANUP_UNSUPPORTED", "Bulk cleanup requires the direct writer", 503, "OBJECTID");
+    return this.statePublisher.deleteTwinEvents(id, accounting);
+  }
+  pruneState(twinId: string, stateId: string) {
+    return this.statePublisher
+      ? this.statePublisher.pruneState(twinId, stateId)
+      : this.mutate("pruneState", { twinId, stateId });
+  }
   addDataset(twinId: string, input: unknown, accounting?: AccountingContext) { return this.statePublisher ? this.statePublisher.addDataset(twinId, asRecord(input), accounting) : this.mutate("addDataset", { twinId, ...asRecord(input) }); }
   addAspect(twinId: string, input: unknown, accounting?: AccountingContext) { return this.statePublisher ? this.statePublisher.addAspect(twinId, asRecord(input), accounting) : this.mutate("addTwinAspect", { twinId, ...asRecord(input) }); }
   addInterface(twinId: string, input: unknown, accounting?: AccountingContext) { return this.statePublisher ? this.statePublisher.addInterface(twinId, asRecord(input), accounting) : this.mutate("addTwinInterface", { twinId, ...asRecord(input) }); }
@@ -147,6 +163,24 @@ export class ProviderObjectIdAdapter implements ObjectIdAdapter {
   async getDigitalThread(twinId: string) {
     return (await this.getTwinEvents(twinId)).sort((a, b) =>
       a.revisionAfter - b.revisionAfter || a.createdAt - b.createdAt || a.eventId.localeCompare(b.eventId));
+  }
+
+  async listTwinIdsForRetention() {
+    if (!this.config.objectid.packageId) throw new AppError("OBJECTID_PACKAGE_ID_MISSING", "objectid.packageId is required", 503, "OBJECTID");
+    const type = `${this.config.objectid.packageId}::oid_twin::OIDTwin`;
+    const objects = await this.oid.getObjectsByType(type, this.config.objectid.network);
+    return [...new Set<string>(objects.map((item: unknown) => objectIdOf(item)).filter(Boolean))];
+  }
+
+  async getTwinStateRetentionSnapshot(twinId: string): Promise<TwinStateRetentionSnapshot> {
+    const [states, events] = await Promise.all([
+      this.getTwinChildren(twinId, "OIDTwinState"),
+      this.getTwinChildren(twinId, "OIDTwinEvent"),
+    ]);
+    return {
+      states: states.map((raw) => stateEvidenceOf(objectIdOf(raw), fieldsOf(raw))),
+      events: events.map(eventOf),
+    };
   }
 
   async getTwinRoleGrants(twinId: string): Promise<TwinRoleGrant[]> {

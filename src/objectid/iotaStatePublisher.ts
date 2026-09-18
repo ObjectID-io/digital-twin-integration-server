@@ -8,6 +8,7 @@ import type { AppConfig } from "../config/types.js";
 import { requiredCredential, type CredentialProvider } from "../security/credentials.js";
 import type { AccountingContext, SubscriptionStatus } from "./types.js";
 import { SponsoredTransactionExecutor, type GasStationConnection } from "./sponsoredTransactionExecutor.js";
+import { planCleanup, type CleanupChild } from "./twinCleanup.js";
 
 type ObjectIdConfig = AppConfig["objectid"];
 
@@ -21,6 +22,7 @@ export class IotaStatePublisher {
   private readonly client: IotaClient;
   private objects?: SignerObjects;
   private executor?: SponsoredTransactionExecutor;
+  private readonly deleting = new Set<string>();
 
   constructor(private readonly config: ObjectIdConfig, private readonly credentials: CredentialProvider, client?: IotaClient) {
     this.client = client ?? new IotaClient({ url: config.rpcUrl || getFullnodeUrl(config.network as "mainnet" | "testnet" | "devnet" | "localnet") });
@@ -61,6 +63,9 @@ export class IotaStatePublisher {
   }
 
   async createTwin(input: Record<string, unknown>, accounting?: AccountingContext) {
+    if (accounting && !this.requiredSignerConfig().delegatedAccounts) {
+      throw new AppError("DELEGATED_SIGNER_REQUIRED", "Customer Twins must be created for the subscription owner, not for the technical signer", 503, "AUTHORIZATION");
+    }
     const subscriptionId = await this.subscriptionIdFor(accounting);
     const subscription = await this.readSubscription(subscriptionId);
     this.assertTenantSubscription(subscription, accounting);
@@ -93,8 +98,96 @@ export class IotaStatePublisher {
   }
 
   async deleteTwin(twinId: string, accounting?: AccountingContext) {
-    const result = await this.twinCall("delete_twin", twinId, () => [], accounting);
-    return { id: requiredObjectId(twinId, "twinId"), deleted: true, digest: result.digest, transaction: result };
+    return this.cleanupTwin(twinId, accounting, false);
+  }
+
+  async deleteTwinEvents(twinId: string, accounting?: AccountingContext) {
+    return this.cleanupTwin(twinId, accounting, true);
+  }
+
+  private async cleanupTwin(twinId: string, accounting: AccountingContext | undefined, eventsOnly: boolean) {
+    const id = requiredObjectId(twinId, "twinId").toLowerCase();
+    if (this.deleting.has(id)) throw new AppError("OBJECTID_DELETION_IN_PROGRESS", "Twin cleanup is already running; retry after it completes", 409, "OBJECTID");
+    this.deleting.add(id);
+    try {
+      const subscriptionId = await this.subscriptionIdFor(accounting);
+      await this.validateTwinAccounting(id, subscriptionId, accounting, true);
+      const initial = await this.cleanupSnapshot(id);
+      // Legacy mainnet remains on its original ABI until separately published.
+      if (!initial.fresh) {
+        if (eventsOnly) throw new AppError("OBJECTID_CLEANUP_UNSUPPORTED", "Bulk event cleanup requires the new contract", 409, "OBJECTID");
+        const result = await this.twinCall("delete_twin", id, () => [], accounting);
+        return { id, deleted: true, digest: result.digest, transaction: result };
+      }
+      planCleanup(initial.children, this.config.packageId!);
+      if (!eventsOnly && (!initial.prepared || initial.children.some(c => c.type.endsWith("::OIDTwinEvent")))) {
+        throw new AppError("OBJECTID_EVENTS_CLEANUP_REQUIRED", "Delete all events using the authorized bulk action before deleting the Twin", 409, "OBJECTID");
+      }
+      const call = (name: string, ids: string[] = []) => this.execute(name, tx => {
+        tx.moveCall({ target: this.target(name), arguments: [
+          ...this.accountArguments(tx, subscriptionId), tx.object(id), ...ids.map(child => tx.object(child)),
+          tx.object(this.requiredSignerConfig().clockId),
+        ] });
+      });
+      if (!initial.prepared) await call("prepare_delete_twin");
+      for (let batch = 0; batch < 256; batch++) {
+        const snapshot = await this.cleanupSnapshot(id);
+        if (eventsOnly) {
+          const events = snapshot.children.filter(c => c.type === `${this.config.packageId}::oid_twin::OIDTwinEvent`);
+          if (!events.length) return { id, eventsDeleted: true, deletionPrepared: true };
+          await this.execute("cleanup_twin_events", tx => {
+            for (const event of events.slice(0, 16)) tx.moveCall({ target: this.target("remove_event"), arguments: [
+              ...this.accountArguments(tx, subscriptionId), tx.object(id), tx.object(event.id), tx.object(this.requiredSignerConfig().clockId),
+            ] });
+          });
+          continue;
+        }
+        if (snapshot.children.length === 0) {
+          const result = await call("delete_twin");
+          return { id, deleted: true, digest: result.digest, transaction: result };
+        }
+        const planned = planCleanup(snapshot.children, this.config.packageId!);
+        await this.execute("cleanup_twin", tx => {
+          for (const step of planned) tx.moveCall({ target: this.target(step.name), arguments: [
+            ...this.accountArguments(tx, subscriptionId), tx.object(id), ...step.ids.map(child => tx.object(child)),
+            tx.object(this.requiredSignerConfig().clockId),
+          ] });
+        });
+      }
+      throw new AppError("OBJECTID_CLEANUP_RETRY_REQUIRED", "Cleanup is partially complete. Retry deletion to resume safely.", 409, "OBJECTID");
+    } finally { this.deleting.delete(id); }
+  }
+
+  private async cleanupSnapshot(id: string) {
+    const root = await this.client.getObject({ id, options: { showContent: true, showType: true } });
+    if (root.data?.type !== `${this.config.packageId}::oid_twin::OIDTwin` || root.data.content?.dataType !== "moveObject") {
+      throw new AppError("OBJECTID_TWIN_PACKAGE_MISMATCH", "Twin is not part of the configured package", 409, "OBJECTID");
+    }
+    const fields = root.data.content.fields as Record<string, any>;
+    if (fields.version === undefined) return { fresh: false, prepared: false, children: [] as CleanupChild[] };
+    if (String(fields.version) !== "1") throw new AppError("OBJECTID_TWIN_VERSION_INVALID", "Unsupported Twin version", 409, "OBJECTID");
+    const table = fields.children?.fields;
+    const tableId = table?.id?.id;
+    if (!tableId) throw new AppError("OBJECTID_CHILD_REGISTRY_INVALID", "Twin child registry missing", 502, "OBJECTID");
+    const ids: string[] = [];
+    let cursor: string | null | undefined;
+    do {
+      const page = await this.client.getDynamicFields({ parentId: tableId, cursor, limit: 50 });
+      for (const entry of page.data) ids.push(requiredObjectId(entry.name.value, "registeredChild"));
+      cursor = page.hasNextPage ? page.nextCursor : null;
+      if (page.hasNextPage && !cursor) throw new Error("Incomplete child registry page");
+    } while (cursor);
+    if (BigInt(ids.length) !== BigInt(table.size) || new Set(ids).size !== ids.length) throw new AppError("OBJECTID_CHILD_REGISTRY_INCOMPLETE", "Child registry is not yet consistent; retry deletion", 409, "OBJECTID");
+    const children: CleanupChild[] = [];
+    for (let start = 0; start < ids.length; start += 50) {
+      for (const child of await this.client.multiGetObjects({ ids: ids.slice(start, start + 50), options: { showContent: true, showType: true, showOwner: true } })) {
+        if (!child.data || child.data.content?.dataType !== "moveObject") throw new Error("Registered child unavailable; retry deletion");
+        const owner = child.data.owner;
+        if (!owner || typeof owner !== "object" || !("AddressOwner" in owner) || owner.AddressOwner !== id) throw new Error("Registered child ownership mismatch");
+        children.push({ id: child.data.objectId, type: child.data.type!, fields: child.data.content.fields as Record<string, any> });
+      }
+    }
+    return { fresh: true, prepared: fields.deletion_prepared === true, children };
   }
 
   async getSubscription(accounting?: AccountingContext): Promise<SubscriptionStatus> {
@@ -107,7 +200,7 @@ export class IotaStatePublisher {
   private async readSubscription(subscriptionId: string): Promise<SubscriptionStatus> {
     const object = await this.client.getObject({ id: subscriptionId, options: { showContent: true, showType: true } });
     if (object.error) throw new AppError("OBJECTID_SUBSCRIPTION_NOT_FOUND", "The configured SubscriptionAccount could not be read", 503, "OBJECTID", { objectId: subscriptionId });
-    if (!String(object.data?.type ?? "").endsWith("::oid_twin::SubscriptionAccount")) {
+    if (object.data?.type !== `${this.config.packageId}::oid_twin::SubscriptionAccount`) {
       throw new AppError("OBJECTID_SUBSCRIPTION_TYPE_INVALID", "The configured subscription object is not a SubscriptionAccount", 503, "OBJECTID", { objectId: subscriptionId });
     }
     const content = object.data?.content;
@@ -150,7 +243,10 @@ export class IotaStatePublisher {
 
   publishState(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
     const payloadInline = stringValue(value(input, "payloadInline", "payload_inline"), "");
-    const payloadHash = stringValue(value(input, "payloadHash", "payload_hash"), createHash("sha256").update(payloadInline).digest("hex"));
+    const payloadHash = canonicalPayloadHash(stringValue(
+      value(input, "payloadHash", "payload_hash"),
+      createHash("sha256").update(payloadInline).digest("hex"),
+    ));
     const observedAt = unsignedInteger(value(input, "observedAt", "observed_at"), Date.now());
     const qualityScore = unsignedInteger(value(input, "qualityScore", "quality_score"), 100);
     if (qualityScore > 100) throw new AppError("OBJECTID_STATE_QUALITY_INVALID", "qualityScore must be between 0 and 100", 422, "VALIDATION");
@@ -166,6 +262,24 @@ export class IotaStatePublisher {
       tx.pure.u64(unsignedInteger(value(input, "validTo", "valid_to"), 0)),
       tx.pure.u8(qualityScore),
     ], accounting);
+  }
+
+  async pruneState(twinId: string, stateId: string) {
+    if (!this.objects) await this.initialize();
+    const normalizedTwinId = requiredObjectId(twinId, "twinId");
+    const twinObject = await this.client.getObject({ id: normalizedTwinId, options: { showContent: true, showType: true } });
+    if (twinObject.error) throw new AppError("OBJECTID_TWIN_NOT_FOUND", "The Twin could not be read before retention pruning", 404, "OBJECTID", { twinId });
+    const content = twinObject.data?.content;
+    const fields = content?.dataType === "moveObject" ? content.fields as Record<string, unknown> : {};
+    const subscriptionId = requiredObjectId(objectIdField(fields.subscription_id), "subscriptionId");
+    await this.validateTwinAccounting(normalizedTwinId, subscriptionId);
+    const result = await this.execute("prune_state_with_receipt", (tx) => {
+      tx.moveCall({ target: this.target("prune_state_with_receipt"), arguments: [
+        ...this.accountArguments(tx, subscriptionId), tx.object(normalizedTwinId),
+        tx.object(requiredObjectId(stateId, "stateId")), tx.object(this.requiredSignerConfig().clockId),
+      ] });
+    });
+    return { id: requiredObjectId(stateId, "stateId"), pruned: true, digest: result.digest, transaction: result };
   }
 
   addDataset(twinId: string, input: Record<string, unknown>, accounting?: AccountingContext) {
@@ -318,9 +432,10 @@ export class IotaStatePublisher {
     return requiredObjectId(accounting?.subscriptionId ?? this.objects!.defaultSubscriptionId, "subscriptionId");
   }
 
-  private async validateTwinAccounting(twinId: string, subscriptionId: string, accounting?: AccountingContext) {
+  private async validateTwinAccounting(twinId: string, subscriptionId: string, accounting?: AccountingContext, cleanup = false) {
     const object = await this.client.getObject({ id: requiredObjectId(twinId, "twinId"), options: { showContent: true, showType: true } });
     if (object.error) throw new AppError("OBJECTID_TWIN_NOT_FOUND", "The Twin could not be read before submission", 404, "OBJECTID", { twinId });
+    if (object.data?.type !== `${this.config.packageId}::oid_twin::OIDTwin`) throw new AppError("OBJECTID_TWIN_PACKAGE_MISMATCH", "Twin belongs to a different package", 409, "OBJECTID");
     const content = object.data?.content;
     const fields = content?.dataType === "moveObject" ? content.fields as Record<string, unknown> : {};
     const actualSubscriptionId = objectIdField(fields.subscription_id);
@@ -329,7 +444,7 @@ export class IotaStatePublisher {
     }
     const subscription = await this.readSubscription(subscriptionId);
     this.assertTenantSubscription(subscription, accounting);
-    if (!subscription.current || BigInt(subscription.remainingCredits) < 1n) {
+    if (!cleanup && (!subscription.current || BigInt(subscription.remainingCredits) < 1n)) {
       throw new AppError("OBJECTID_SUBSCRIPTION_CREDIT_EXHAUSTED", "The tenant subscription is inactive or has no remaining credits", 402, "AUTHORIZATION", { subscriptionId });
     }
   }
@@ -344,7 +459,7 @@ export class IotaStatePublisher {
   }
 
   private target(functionName: string): `${string}::${string}::${string}` {
-    return `${this.config.packageId}::oid_twin::${functionName}`;
+    return `${this.config.executionPackageId || this.config.packageId}::oid_twin::${functionName}`;
   }
 
   private requiredSignerConfig() {
@@ -367,6 +482,13 @@ function requiredString(input: unknown, name: string) {
 }
 
 function stringValue(input: unknown, fallback: string) { return typeof input === "string" ? input : fallback; }
+
+function canonicalPayloadHash(input: string) {
+  const value = input.toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(value)) return `sha256:${value}`;
+  if (/^(sha256:|0x)[0-9a-f]{64}$/.test(value)) return value;
+  throw new AppError("OBJECTID_STATE_HASH_INVALID", "payloadHash must be a SHA-256 digest", 422, "VALIDATION");
+}
 
 function metadataValue(input: unknown) {
   if (typeof input === "string") return input;

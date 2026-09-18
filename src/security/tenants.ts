@@ -21,6 +21,7 @@ interface TenantDefinition extends AccountingContext {
 }
 
 interface TwinDeviceCredential {
+  bootstrap?: boolean;
   twinId: string;
   username: string;
   version: number;
@@ -83,6 +84,11 @@ export class TenantRegistry {
     return this.get(this.config.defaultTenantId);
   }
 
+  async findBySubscriptionId(subscriptionId: string): Promise<AccountingContext | undefined> {
+    const tenant = (await this.definitions()).find(item => item.subscriptionId.toLowerCase() === subscriptionId.toLowerCase());
+    return tenant ? { tenantId: tenant.tenantId, subscriptionId: tenant.subscriptionId, ownerDid: tenant.ownerDid, customerId: tenant.customerId } : undefined;
+  }
+
   async findByOwnerDid(ownerDid: string): Promise<AccountingContext | undefined> {
     const tenant = (await this.definitions()).find((item) => item.ownerDid.toLowerCase() === ownerDid.toLowerCase());
     return tenant ? accountingOf(tenant) : undefined;
@@ -143,7 +149,11 @@ export class TenantRegistry {
     return twinStatusOf(tenant, twinId, credential);
   }
 
-  async rotateTwinCredentials(ownerDid: string, twinId: string, mqttUsername: string, mqttPassword: string) {
+  async rotateBootstrapCredentials(ownerDid: string, deviceId: string, username: string, password: string) {
+    if (!/^device-[a-f0-9-]{36}$/.test(deviceId)) throw new AppError("DEVICE_ID_INVALID", "Invalid device ID", 422, "VALIDATION");
+    return this.rotateTwinCredentials(ownerDid, deviceId, username, password, true);
+  }
+  async rotateTwinCredentials(ownerDid: string, twinId: string, mqttUsername: string, mqttPassword: string, bootstrap = false) {
     const file = this.dynamicFile();
     const state = await readDynamic(file);
     const index = state.tenants.findIndex((tenant) => String(tenant.ownerDid).toLowerCase() === ownerDid.toLowerCase());
@@ -151,6 +161,7 @@ export class TenantRegistry {
     const previous = state.tenants[index] as TenantDefinition;
     const current = previous.deviceCredentials?.find((value) => value.twinId.toLowerCase() === twinId.toLowerCase());
     const credential: TwinDeviceCredential = {
+      bootstrap,
       twinId: twinId.toLowerCase(),
       username: mqttUsername,
       version: Number(current?.version ?? 0) + 1,
@@ -187,7 +198,7 @@ export class TenantRegistry {
     return twinStatusOf(next, twinId, current ? { ...current, revokedAt } : undefined);
   }
 
-  async revokeExternalCredentials(ownerDid: string) {
+  async revokeExternalCredentials(ownerDid: string, revokeDevices = true) {
     const file = this.dynamicFile();
     const state = await readDynamic(file);
     const index = state.tenants.findIndex((tenant) => String(tenant.ownerDid).toLowerCase() === ownerDid.toLowerCase());
@@ -200,12 +211,12 @@ export class TenantRegistry {
       externalApiKeyHash: undefined,
       mqttTwinIds: [],
       credentialsRevokedAt: revokedAt,
-      deviceCredentials: (previous.deviceCredentials ?? []).map((credential) => ({ ...credential, revokedAt })),
+      deviceCredentials: revokeDevices ? (previous.deviceCredentials ?? []).map((credential) => ({ ...credential, revokedAt })) : previous.deviceCredentials,
     };
     state.tenants[index] = next;
     await writeDynamic(file, state);
     if (username) await this.updateMqttPassword("delete", username);
-    for (const credential of previous.deviceCredentials ?? []) {
+    for (const credential of revokeDevices ? previous.deviceCredentials ?? [] : []) {
       if (!credential.revokedAt) await this.updateMqttPassword("delete", credential.username);
     }
     await this.rewriteMqttAcl(state.tenants as TenantDefinition[]);
@@ -259,6 +270,10 @@ export class TenantRegistry {
       for (const credential of tenant.deviceCredentials ?? []) {
         if (credential.revokedAt) continue;
         const prefix = String(provisioning?.topicPrefix ?? "objectid/tenants").replace(/^\/+|\/+$/g, "");
+        if (credential.bootstrap) {
+          lines.push(`user ${credential.username}`, `topic write ${prefix}/${tenant.tenantId}/devices/${credential.twinId}/telemetry`, "");
+          continue;
+        }
         const commandPrefix = prefix.endsWith("/tenants") ? prefix.slice(0, -8) : prefix;
         const root = `${prefix}/${tenant.tenantId}/twins/${credential.twinId}`;
         lines.push(
@@ -272,9 +287,9 @@ export class TenantRegistry {
       }
     }
     await mkdir(dirname(mqtt.aclFile), { recursive: true });
-    const temporary = `${mqtt.aclFile}.${process.pid}.tmp`;
-    await writeFile(temporary, `${lines.join("\n")}\n`, { mode: 0o660 });
-    await rename(temporary, mqtt.aclFile);
+    // mqtt-init creates this file as the broker user. Updating it in place keeps
+    // that ownership, while the DTIS supplemental broker group grants write access.
+    await writeFile(mqtt.aclFile, `${lines.join("\n")}\n`, { mode: 0o660 });
   }
 
   private async definitions(): Promise<TenantDefinition[]> {
@@ -317,12 +332,13 @@ function validateTenant(value: any, index: number): TenantDefinition {
     credentialsRotatedAt: value?.credentialsRotatedAt ? String(value.credentialsRotatedAt) : undefined,
     credentialsRevokedAt: value?.credentialsRevokedAt ? String(value.credentialsRevokedAt) : undefined,
     deviceCredentials: Array.isArray(value?.deviceCredentials) ? value.deviceCredentials.map((credential: any) => ({
+      bootstrap: credential?.bootstrap === true,
       twinId: String(credential?.twinId ?? "").toLowerCase(),
       username: String(credential?.username ?? ""),
       version: Number(credential?.version ?? 0),
       rotatedAt: String(credential?.rotatedAt ?? ""),
       revokedAt: credential?.revokedAt ? String(credential.revokedAt) : undefined,
-    })).filter((credential: TwinDeviceCredential) => /^0x[0-9a-f]{64}$/.test(credential.twinId) && credential.username && credential.version > 0 && credential.rotatedAt) : [],
+    })).filter((credential: TwinDeviceCredential) => (credential.bootstrap ? /^device-[a-f0-9-]{36}$/.test(credential.twinId) : /^0x[0-9a-f]{64}$/.test(credential.twinId)) && credential.username && credential.version > 0 && credential.rotatedAt) : [],
   };
   if (!tenant.tenantId || !tenant.customerId || !/^did:iota(?::[a-z0-9-]+)?:0x[0-9a-f]{64}$/i.test(tenant.ownerDid) || (!tenant.apiKeyCredential && !/^[0-9a-f]{64}$/.test(tenant.apiKeyHash ?? "")) || !/^0x[0-9a-f]{64}$/.test(tenant.subscriptionId)) {
     throw new AppError("CONFIG_TENANT_INVALID", `Tenant registry entry ${index} is invalid`, 500, "VALIDATION");

@@ -21,6 +21,19 @@ export class AiAnalysisConnector implements TwinConnector {
   private readonly states = new Map<string, State>();
   private readonly requests = new Set<AbortController>();
   private failed = false;
+  private readonly pausedTenants = new Set<string>();
+  private readonly twinRequests = new Map<string, AbortController>();
+
+  setTenantEnabled(tenant: string, enabled: boolean) {
+    if (enabled) this.pausedTenants.delete(tenant);
+    else {
+      this.pausedTenants.add(tenant);
+      for (const scope of this.config?.scopes ?? []) if (scope.tenantId === tenant) {
+        this.twinRequests.get(scope.twinId)?.abort();
+        this.states.delete(scope.twinId);
+      }
+    }
+  }
 
   constructor(private readonly fetcher: typeof fetch = fetch) {}
 
@@ -52,7 +65,7 @@ export class AiAnalysisConnector implements TwinConnector {
   observe(tenantId: string, event: TwinRealtimeEvent): void {
     const config = this.config;
     const scope = config?.scopes.find(s => s.tenantId === tenantId && s.twinId === event.twinId);
-    if (!config || !scope) return;
+    if (!config || !scope || this.pausedTenants.has(tenantId)) return;
     if (event.encryption.encrypted) { this.states.delete(event.twinId); return; }
     const values: Record<string, number> = Object.create(null);
     for (const field of scope.fields) {
@@ -75,6 +88,7 @@ export class AiAnalysisConnector implements TwinConnector {
 
   private async analyze(twinId: string, state: State, config: NonNullable<AiAnalysisConnector["config"]>) {
     const controller = new AbortController(); this.requests.add(controller);
+    this.twinRequests.set(twinId, controller);
     const timer = setTimeout(() => controller.abort(), config.timeoutMs);
     const samples = structuredClone(state.samples);
     try {
@@ -99,8 +113,8 @@ export class AiAnalysisConnector implements TwinConnector {
           model: config.model, generatedAt: Date.now(), sourceReceivedAt: samples.at(-1)!.receivedAt, sampleCount: samples.length };
         this.failed = false;
       }
-    } catch { this.failed = true; /* Never log provider bodies, input or credentials. */ }
-    finally { clearTimeout(timer); this.requests.delete(controller); state.busy = false; }
+    } catch { if (this.states.get(twinId) === state) this.failed = true; /* Never log provider bodies, input or credentials. */ }
+    finally { clearTimeout(timer); this.requests.delete(controller); if (this.twinRequests.get(twinId) === controller) this.twinRequests.delete(twinId); state.busy = false; }
   }
 
   latest(twinId: string) {

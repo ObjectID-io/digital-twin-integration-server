@@ -125,6 +125,10 @@ retention:
   intervalMs: 3600000
   startupDelayMs: 60000
   maxDeletesPerRun: 500
+  onChainStates:
+    enabled: true
+    retentionDays: 30
+    maxPrunesPerRun: 50
   ownerPolicies:
     # SLA-ready owner override. null means keep indefinitely.
     - ownerDid: did:iota:testnet:0xreplace

@@ -24,6 +24,18 @@ export interface RetentionRunResult {
   skippedUnresolved: number;
   failed: number;
   capped: boolean;
+  onChainStates: OnChainStateRetentionResult;
+}
+
+export interface OnChainStateRetentionResult {
+  enabled: boolean;
+  twinsScanned: number;
+  statesScanned: number;
+  eligible: number;
+  pruned: number;
+  skippedUnanchored: number;
+  failed: number;
+  capped: boolean;
 }
 
 export class StorageRetentionService {
@@ -65,6 +77,7 @@ export class StorageRetentionService {
     const owners = new Map<string, string | null>();
     let eligible = 0, deleted = 0, skippedUnresolved = 0, failed = 0;
     for (const object of objects.sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+      if (object.category === "plants" || object.twinId === "unscoped") continue;
       if (!owners.has(object.twinId)) owners.set(object.twinId, await this.ownerDid(object.twinId));
       const ownerDid = owners.get(object.twinId);
       if (!ownerDid) { skippedUnresolved += 1; continue; }
@@ -75,9 +88,77 @@ export class StorageRetentionService {
       try { await this.storage.delete(object.uri); deleted += 1; }
       catch (error) { failed += 1; logger.error({ uri: object.uri, twinId: object.twinId, error }, "storage_retention_delete_failed"); }
     }
-    const result = { startedAt, completedAt: new Date(this.now()).toISOString(), scanned: objects.length, eligible, deleted, skippedUnresolved, failed, capped: eligible > deleted + failed };
+    const onChainStates = await this.pruneOnChainStates();
+    const result = { startedAt, completedAt: new Date(this.now()).toISOString(), scanned: objects.length, eligible, deleted, skippedUnresolved, failed, capped: eligible > deleted + failed, onChainStates };
     this.lastRun = result;
     logger.info(result, "storage_retention_run_completed");
+    return result;
+  }
+
+  private async pruneOnChainStates(): Promise<OnChainStateRetentionResult> {
+    const result: OnChainStateRetentionResult = {
+      enabled: this.config.onChainStates.enabled,
+      twinsScanned: 0, statesScanned: 0, eligible: 0, pruned: 0,
+      skippedUnanchored: 0, failed: 0, capped: false,
+    };
+    if (!result.enabled) return result;
+    if (!this.objectid.listTwinIdsForRetention || !this.objectid.getTwinStateRetentionSnapshot || !this.objectid.pruneState) {
+      logger.warn("onchain_state_retention_unavailable");
+      return result;
+    }
+
+    const cutoff = this.now() - this.config.onChainStates.retentionDays * DAY_MS;
+    let twinIds: string[];
+    try {
+      twinIds = await this.objectid.listTwinIdsForRetention();
+    } catch (error) {
+      result.failed += 1;
+      logger.error({ error }, "onchain_state_retention_discovery_failed");
+      return result;
+    }
+    for (const twinId of twinIds) {
+      let snapshot;
+      try {
+        snapshot = await this.objectid.getTwinStateRetentionSnapshot(twinId);
+        result.twinsScanned += 1;
+      } catch (error) {
+        result.failed += 1;
+        logger.error({ twinId, error }, "onchain_state_retention_scan_failed");
+        continue;
+      }
+      result.statesScanned += snapshot.states.length;
+      const newestByStream = new Map<string, string>();
+      for (const state of [...snapshot.states].sort(compareStatesNewestFirst)) {
+        const stream = `${state.aspectCode}\u0000${state.sampleType}`;
+        if (!newestByStream.has(stream)) newestByStream.set(stream, state.objectId.toLowerCase());
+      }
+      const publications = new Map(snapshot.events
+        .filter((event) => event.eventType === 30 && event.payloadRef)
+        .map((event) => [event.payloadRef.toLowerCase(), event]));
+
+      for (const state of [...snapshot.states].sort(compareStatesOldestFirst)) {
+        const stream = `${state.aspectCode}\u0000${state.sampleType}`;
+        if (newestByStream.get(stream) === state.objectId.toLowerCase()) continue;
+        const publication = publications.get(state.objectId.toLowerCase());
+        if (!publication || publication.createdAt > cutoff) continue;
+        if (!canCreateVerificationReceipt(state.payloadHash, publication.payloadHash)) {
+          result.skippedUnanchored += 1;
+          continue;
+        }
+        result.eligible += 1;
+        if (result.pruned >= this.config.onChainStates.maxPrunesPerRun) {
+          result.capped = true;
+          continue;
+        }
+        try {
+          await this.objectid.pruneState(twinId, state.objectId);
+          result.pruned += 1;
+        } catch (error) {
+          result.failed += 1;
+          logger.error({ twinId, stateId: state.objectId, error }, "onchain_state_retention_prune_failed");
+        }
+      }
+    }
     return result;
   }
 
@@ -92,4 +173,27 @@ export class StorageRetentionService {
       return null;
     }
   }
+}
+
+function compareStatesNewestFirst(a: { observedAt: number; objectId: string }, b: { observedAt: number; objectId: string }) {
+  return b.observedAt - a.observedAt || b.objectId.localeCompare(a.objectId);
+}
+
+function compareStatesOldestFirst(a: { observedAt: number; objectId: string }, b: { observedAt: number; objectId: string }) {
+  return a.observedAt - b.observedAt || a.objectId.localeCompare(b.objectId);
+}
+
+function canCreateVerificationReceipt(stateHash: string, publicationHash: string) {
+  const stateDigest = hashDigest(stateHash);
+  if (!stateDigest) return false;
+  // Legacy publish_state events stored no hash. The upgraded atomic prune call
+  // reads it from the state and writes EVENT_STATE_PRUNED before deletion.
+  if (!publicationHash) return true;
+  if (!/^(sha256:|0x)[0-9a-f]{64}$/.test(publicationHash.toLowerCase())) return false;
+  return stateDigest === hashDigest(publicationHash);
+}
+
+function hashDigest(value: string) {
+  const normalized = value.toLowerCase().replace(/^(sha256:|0x)/, "");
+  return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
 }

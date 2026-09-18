@@ -29,6 +29,11 @@ export interface TwinStateEvidence {
   superseded: boolean;
 }
 
+export interface TwinStateRetentionSnapshot {
+  states: TwinStateEvidence[];
+  events: TwinEvent[];
+}
+
 export interface TwinRoleGrant {
   twinId?: string;
   subjectDid: string;
@@ -85,8 +90,10 @@ export interface ObjectIdAdapter {
   findTwinsByDid(did: string): Promise<DidTwinSummary[]>;
   createTwin(input: unknown, accounting?: AccountingContext): Promise<unknown>;
   deleteTwin?(id: string, accounting?: AccountingContext): Promise<unknown>;
+  deleteTwinEvents?(id: string, accounting?: AccountingContext): Promise<unknown>;
   updateTwin(id: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
   publishState(twinId: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
+  pruneState?(twinId: string, stateId: string): Promise<unknown>;
   addDataset(twinId: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
   addAspect(twinId: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
   addInterface(twinId: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
@@ -98,6 +105,8 @@ export interface ObjectIdAdapter {
   emitTwinEvent(twinId: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
   getTwinEvents(twinId: string): Promise<TwinEvent[]>;
   getDigitalThread(twinId: string): Promise<TwinEvent[]>;
+  listTwinIdsForRetention?(): Promise<string[]>;
+  getTwinStateRetentionSnapshot?(twinId: string): Promise<TwinStateRetentionSnapshot>;
   createMaturityAssessment(twinId: string, input: unknown, accounting?: AccountingContext): Promise<unknown>;
   getTwinChildren(twinId: string, moveType: string): Promise<unknown[]>;
   getTwinRoleGrants(twinId: string): Promise<TwinRoleGrant[]>;

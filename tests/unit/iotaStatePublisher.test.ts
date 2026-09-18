@@ -118,4 +118,32 @@ describe("IotaStatePublisher", () => {
     vi.unstubAllGlobals();
     build.mockRestore();
   });
+
+  it("uses the atomic receipt entry point when pruning a state", async () => {
+    const getObject = vi.fn(async ({ id: objectId }: { id: string }) => objectId === id("3") ? { data: {
+      type: `${id("1")}::oid_twin::SubscriptionAccount`,
+      content: { dataType: "moveObject", type: `${id("1")}::oid_twin::SubscriptionAccount`, fields: {
+        customer_id: "legacy", controller_id: id("7"), plan: 1, status: 1, period_start: "0",
+        period_end: String(Date.now() + 60_000), twin_limit: "5", active_twin_count: "1",
+        credit_limit: "10000", credits_used: "1", updated_at: "1",
+      } },
+    } } : { data: {
+      type: `${id("1")}::oid_twin::OIDTwin`,
+      content: { dataType: "moveObject", type: `${id("1")}::oid_twin::OIDTwin`, fields: { subscription_id: id("3") } },
+    } });
+    const publisher = new IotaStatePublisher(objectidConfig(), credentials(), { getObject } as unknown as IotaClient);
+    (publisher as any).objects = { controllerCapId: id("2"), defaultSubscriptionId: id("3") };
+    (publisher as any).execute = vi.fn(async (operation: string, configure: (tx: Transaction) => void) => {
+      expect(operation).toBe("prune_state_with_receipt");
+      const tx = new Transaction(); configure(tx);
+      const command = tx.getData().commands[0];
+      expect(command?.$kind).toBe("MoveCall");
+      if (!command || command.$kind !== "MoveCall" || !command.MoveCall) throw new Error("expected MoveCall");
+      expect(command.MoveCall.function).toBe("prune_state_with_receipt");
+      expect(command.MoveCall.arguments).toHaveLength(5);
+      return { digest: "prune-digest" };
+    });
+
+    await expect(publisher.pruneState(id("5"), id("6"))).resolves.toMatchObject({ id: id("6"), pruned: true, digest: "prune-digest" });
+  });
 });

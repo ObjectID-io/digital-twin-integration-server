@@ -7,13 +7,14 @@
   <title>ObjectID · DTIS</title>
   <link rel="stylesheet" href="console-assets/status.css">
   <script src="console-assets/status.js" defer></script>
-</head>
-<body>
+<link rel="stylesheet" href="console-assets/devices.css?v=20260908c"><script type="module" src="console-assets/did-login.bundle.js?v=20260908c"></script></head>
+<body data-home="true">
   <header class="topbar">
     <a class="brand" href="./" aria-label="ObjectID DTIS home"><span>OID::</span>ObjectID</a>
     <nav aria-label="DTIS resources">
       <a href="docs">API DOCS</a>
       <a href="openapi.json">OPENAPI</a>
+      <button id="open-login" type="button">SIGN IN</button><a id="my-twins-link" href="tenant" hidden>TENANT ACCESS</a><button id="disconnect" hidden>SIGN OUT</button>
       <a id="network-link" href="/mainnet/">MAINNET</a>
       <button id="refresh" type="button">REFRESH</button>
     </nav>
@@ -52,5 +53,13 @@
   </main>
 
   <footer><span>ObjectID Infrastructure</span><span id="auto-refresh">AUTO-REFRESH · 30S</span></footer>
+<dialog id="login-dialog" aria-labelledby="login-title"><button id="close-login" type="button" aria-label="Close sign-in dialog">×</button><section id="login-section"><p class="eyebrow">LOCAL SIGNATURE · ON-CHAIN VERIFICATION</p><h2 id="login-title">Sign in to the Integration Server</h2>
+<p>Your seed signs a one-time challenge in your browser: it is never sent to or stored on the server. The IS signing identity remains separate from yours.</p>
+<form id="did-login" autocomplete="on"><label>IOTA DID<input id="login-did" type="text" name="did" autocapitalize="none" required autocomplete="username" spellcheck="false"></label>
+<label>Identity seed<input id="login-seed" name="seed" type="password" autocomplete="current-password" spellcheck="false"></label>
+<label>Or import an encrypted recovery file<input name="recovery" type="file" accept=".json,application/json"></label>
+<label>Recovery file password<input name="recoveryPassword" type="password" autocomplete="off"></label>
+<button id="sign-in-submit" type="submit">SIGN AND SIGN IN</button><p id="login-message" role="status"></p></form></section></dialog>
+<section class="content-section" id="identity-section" hidden><h2>Your access</h2><p id="identity-info"></p><p id="subscription-info"></p><a id="subscription-link" rel="noopener noreferrer" target="_blank">Manage identity and subscription in DT ↗</a></section>
 </body>
 </html>

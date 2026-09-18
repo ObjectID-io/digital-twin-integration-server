@@ -17,4 +17,18 @@ describe("Digital Thread verifier", () => {
     const result = verifyEvents("0xtwin", events);
     expect(result.valid).toBe(false); expect(result.gaps.length).toBeGreaterThan(0);
   });
+  it("keeps a pruned state publication verifiable and detects a present-state hash mismatch", () => {
+    const anchored = { ...event(0), eventType: 30, payloadRef: "0xstate" };
+    expect(verifyEvents("0xtwin", [anchored]).valid).toBe(true);
+
+    const mismatched = {
+      ...anchored,
+      referencedState: {
+        objectId: "0xstate", aspectCode: "telemetry", sampleType: "observed", sourceUri: "",
+        payloadHash: "b".repeat(64), payloadUri: "", payloadInline: "", observedAt: 0,
+        validFrom: 0, validTo: 0, qualityScore: 100, creatorDid: "did:iota:actor", superseded: false,
+      },
+    };
+    expect(verifyEvents("0xtwin", [mismatched]).valid).toBe(false);
+  });
 });
