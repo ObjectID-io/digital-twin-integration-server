@@ -21,6 +21,55 @@ const metricDefinitions = [
 ];
 
 const byId = (id) => document.getElementById(id);
+let pageNetwork=null, currentServices=[], moduleState=[], moduleError="", moduleBusy=false, sessionGeneration=0;
+let loginState=window.dtisSessionState || {authenticated:false};
+const moduleForService={"connector-rest":"rest","connector-ai":"ai","connector-mqtt":"commands"};
+function mayControl(){return loginState.authenticated && loginState.network===pageNetwork;}
+async function loadModules(){
+  const generation=++sessionGeneration;
+  if(!mayControl()){moduleState=[];moduleError="";return;}
+  try{
+    const response=await fetch("api/modules/",{credentials:"same-origin",cache:"no-store"});
+    const data=await response.json();
+    if(!response.ok)throw Error(data.error?.message || "Module controls unavailable");
+    if(generation===sessionGeneration && mayControl()){moduleState=data.modules;moduleError="";}
+  }catch(error){if(generation===sessionGeneration){moduleState=[];moduleError=error.message;}}
+}
+window.addEventListener("dtis-native-session",async event=>{
+  loginState=event.detail;moduleState=[];moduleError="";++sessionGeneration;
+  renderServices(currentServices);
+  await loadModules();renderServices(currentServices);
+});
+
+function appendModuleControls(card,service){
+  const id=moduleForService[service.id];
+  if(!id || !mayControl())return;
+  const area=document.createElement("div");area.className="module-controls";
+  const label=id==="commands"?"Device commands for your tenant":"Your tenant";
+  area.append(textElement("p","service-meta",label));
+  const state=moduleState.find(m=>m.id===id);
+  const message=textElement("p","module-state",moduleError || (!state?"Loading controls…":!state.available?"Not configured for your tenant":state.enabled?"Enabled":"Paused"));
+  message.setAttribute("role","status");area.append(message);
+  if(state){
+    const button=textElement("button","",state.enabled?"PAUSE":"ENABLE");
+    button.type="button";button.disabled=!state.available || moduleBusy;
+    button.setAttribute("aria-label",`${state.enabled?"Pause":"Enable"} ${id} for your tenant`);
+    button.onclick=async()=>{
+      if(!mayControl() || moduleBusy || !confirm(`${state.enabled?"Pause":"Enable"} ${id} for your tenant only?`))return;
+      const generation=sessionGeneration;
+      moduleBusy=true;renderServices(currentServices);
+      try{
+        const response=await fetch("api/modules/"+id,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:!state.enabled})});
+        const data=await response.json();
+        if(!response.ok)throw Error(data.error?.message || "Unable to update module");
+        if(generation===sessionGeneration && mayControl()){moduleState=data.modules;moduleError="";}
+      }catch(error){if(generation===sessionGeneration)moduleError=error.message;}
+      finally{moduleBusy=false;renderServices(currentServices);}
+    };
+    area.append(button);
+  }
+  card.append(area);
+}
 
 function textElement(tag, className, value) {
   const element = document.createElement(tag);
@@ -43,6 +92,7 @@ function renderServices(services) {
     card.append(heading, textElement("p", "service-detail", service.detail || "Health check"));
     const meta = service.required ? "REQUIRED" : "OPTIONAL";
     card.append(textElement("p", "service-meta", meta));
+    appendModuleControls(card,service);
     container.append(card);
   }
   const active = services.filter((item) => item.status !== "disabled");
@@ -78,6 +128,9 @@ async function refresh() {
     const response = await fetch("status.json", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
+    pageNetwork=data.network;
+    currentServices=Array.isArray(data.services)?data.services:[];
+    if(!moduleBusy)await loadModules();
     const overall = String(data.overall || "unavailable");
     byId("overall").textContent = statusNames[overall]?.toUpperCase() || overall.toUpperCase();
     byId("overall-dot").className = `status-dot ${overall}`;
@@ -88,7 +141,7 @@ async function refresh() {
     const networkLink = byId("network-link");
     networkLink.textContent = data.network === "mainnet" ? "TESTNET" : "MAINNET";
     networkLink.href = data.network === "mainnet" ? "/" : "/mainnet/";
-    renderServices(Array.isArray(data.services) ? data.services : []);
+    renderServices(currentServices);
     renderMetrics(data.metrics || {});
   } catch (error) {
     byId("overall").textContent = "UNREACHABLE";

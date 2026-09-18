@@ -1,6 +1,6 @@
 # Tenant module controls
 
-Open `/tenant` (or `/mainnet/tenant` on the mainnet deployment), sign in using the existing DID signature dialog, then use **Functional modules**.
+Open `/` (testnet) or `/mainnet/`, sign in using the DID signature dialog, then use the controls directly on the **Service health** cards. Controls appear only when the session network matches the displayed network. REST and AI controls are on their respective cards; device-command controls are inside the MQTT card and do not stop the shared broker. Tenant access remains dedicated to credentials.
 
 Only the authenticated tenant owner can change these controls. The server derives the tenant from the verified DID session, never from submitted tenant IDs. Mutations require the existing same-origin session checks. Login does not grant server-administrator access.
 

@@ -32,7 +32,7 @@ async function session(explicit=false) {
   $("subscription-info").textContent=value.subscriptionConfigured?"Subscription linked. Validity and availability are checked before creating a Twin.":"No subscription linked on this IS. Activate one in DT or contact your IS administrator.";
   $("subscription-link").href=value.network==="mainnet"?"https://dt.objectid.io/":"https://dt-demo.objectid.io/";
   if(!value.available)$("login-message").textContent="DID sign-in is not configured on this IS yet.";
-  window.dtisSessionState={authenticated:Boolean(value.session),explicit};
+  window.dtisSessionState={authenticated:Boolean(value.session),network:value.network,explicit};
   window.dispatchEvent(new CustomEvent("dtis-native-session",{detail:window.dtisSessionState}));
 }
 form.elements.recovery.onchange=async event=>{
